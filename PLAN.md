@@ -1139,7 +1139,10 @@ bun run test:figma:report
 
 Based on our research, **Yoga** is the right choice now:
 
-- **CSS Grid support is landing** — 9-part PR series active (Feb 2026)
+- **CSS Grid support is landing** — [facebook/yoga#1893](https://github.com/facebook/yoga/pull/1893)–#1902 (9 PRs by @intergalacticspacehighway from Expo)
+  - PR 1/9 (style types & public API) under active review by NickGerleman (Meta), last activity Feb 28, 2026
+  - Supported: `grid-template-columns/rows`, `grid-column/row-start/end`, `grid-auto-columns/rows`, `minmax()`, `auto`, `%`, `px`, `fr`
+  - Not yet: `repeat()`, `auto-fill`/`auto-fit`, `grid-template-areas`, `grid-auto-flow`, subgrid
 - Battle-tested in React Native (billions of devices)
 - ~45KB WASM, well-maintained by Meta
 - Flexbox + Grid covers everything a design tool needs
@@ -1428,6 +1431,51 @@ Every piece needs to work together. Here's the proof-of-concept checklist before
 5. Save as .openpencil → reopen → identical
 
 This PoC validates the entire stack end-to-end in 4 weeks, before committing to 14 months of development.
+
+---
+
+## CLI & Headless Mode
+
+The editor should be fully controllable by AI agents and usable in CI without a GUI.
+
+### Two modes
+
+**Attached** — CLI connects to a running OpenPencil instance via WebSocket. The app starts a WS server on a configurable port. `eval` runs JS in the app's context with full access to the editor store, scene graph, renderer, and CanvasKit. This is how interactive AI workflows work (create, modify, screenshot, iterate).
+
+**Headless** — CLI loads the engine directly in Bun/Node, no window, no Tauri, no WebGL. The engine (scene-graph, layout, codec) is pure TypeScript with no DOM dependencies. Rust zstd/zip is replaced with fflate (already bundled as browser fallback). This enables linting, analysis, .fig validation, and CI pipelines without a running app.
+
+### Package structure
+
+```
+packages/
+  core/        — scene-graph, layout, codec, types (extracted from src/engine/)
+  cli/         — open-pencil CLI (eval, lint, find, export, etc.)
+  mcp/         — MCP server (wraps CLI commands for AI agents)
+```
+
+`core` is the key extraction: the engine without rendering, importable by CLI, MCP, tests, and the app. The app's `src/engine/` imports from `core` instead of owning the types.
+
+### CLI commands (matching figma-use where applicable)
+
+| Command | Mode | Description |
+|---------|------|-------------|
+| `eval <code>` | attached | Run JS in editor context |
+| `find <query>` | both | Find nodes by name, type, XPath |
+| `lint` | both | Run design linter rules on .fig/.openpencil file |
+| `export <format>` | attached | Export selection/page as PNG/SVG/PDF |
+| `node get <id>` | both | Get node properties |
+| `node tree` | both | Print node tree |
+| `create <type>` | attached | Create a node |
+| `set <prop> <value>` | attached | Set node property |
+| `analyze colors` | both | Analyze color palette |
+| `analyze spacing` | both | Analyze spacing consistency |
+| `mcp` | both | Start MCP server |
+| `open <file>` | attached | Open .fig/.openpencil file |
+| `screenshot` | attached | Capture current viewport |
+
+### Why not a Tauri CLI?
+
+Tauri is a GUI framework — no headless mode. A separate Bun-based CLI that imports `core` directly is simpler, faster to start, and works in CI (Docker, GitHub Actions) without X11/Wayland.
 
 ---
 
