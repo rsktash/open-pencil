@@ -1438,58 +1438,219 @@ This PoC validates the entire stack end-to-end in 4 weeks, before committing to 
 
 The editor should be fully controllable by AI agents and usable in CI without a GUI.
 
-### Two modes
+### Architecture
+
+Two modes of operation:
 
 **Attached** — CLI connects to a running OpenPencil instance via WebSocket. The app starts a WS server on a configurable port. `eval` runs JS in the app's context with full access to the editor store, scene graph, renderer, and CanvasKit. This is how interactive AI workflows work (create, modify, screenshot, iterate).
 
-**Headless** — CLI loads the engine directly in Bun/Node, no window, no Tauri, no WebGL. The engine (scene-graph, layout, codec) is pure TypeScript with no DOM dependencies. Rust zstd/zip is replaced with fflate (already bundled as browser fallback). This enables linting, analysis, .fig validation, and CI pipelines without a running app.
+**Headless** — CLI loads the engine directly in Bun, no window, no Tauri, no WebGL. For linting, analysis, .fig validation, rendering, CI pipelines. CanvasKit WASM has a CPU software rasterizer (`CanvasKit.MakeSurface(w, h)`) so even PNG export works without a display server.
 
-### Package structure
+**Why not a Tauri CLI?** Tauri is a GUI framework — no headless mode. A Bun CLI that imports the engine directly starts instantly and works in CI (Docker, GitHub Actions) without X11/Wayland.
+
+### Monorepo structure
+
+Convert to a Bun workspace monorepo:
 
 ```
+package.json              — workspace root: { "workspaces": ["packages/*"] }
 packages/
-  core/        — scene-graph, layout, codec, types (extracted from src/engine/)
-  cli/         — open-pencil CLI (eval, lint, find, export, etc.)
-  mcp/         — MCP server (wraps CLI commands for AI agents)
+  core/                   — engine: scene-graph, layout, codec, types, renderer
+    src/
+      types.ts            — ← from src/types.ts
+      scene-graph.ts      — ← from src/engine/scene-graph.ts
+      layout.ts           — ← from src/engine/layout.ts
+      renderer.ts         — ← from src/engine/renderer.ts
+      fonts.ts            — ← from src/engine/fonts.ts
+      color.ts            — ← from src/engine/color.ts
+      vector.ts           — ← from src/engine/vector.ts
+      snap.ts             — ← from src/engine/snap.ts
+      undo.ts             — ← from src/engine/undo.ts
+      clipboard.ts        — ← from src/engine/clipboard.ts
+      fig-export.ts       — ← from src/engine/fig-export.ts
+      canvaskit.ts         — ← from src/engine/canvaskit.ts (+ headless init path)
+      constants.ts        — ← rendering/engine constants from src/constants.ts
+      kiwi/               — ← from src/kiwi/ (codec, fig-import, fig-file, schema, protocol)
+      index.ts            — public API barrel
+    package.json          — name: @open-pencil/core, no DOM deps
+  cli/                    — CLI: open-pencil command
+    src/
+      index.ts            — citty main (like figma-use)
+      headless.ts         — headless document context (load file → SceneGraph + CanvasKit CPU)
+      attached.ts         — WebSocket client for attached mode
+      commands/
+        eval.ts           — attached: run JS in editor context
+        lint.ts           — both: design linter (port from figma-use)
+        find.ts           — both: find nodes by name/type/query
+        export.ts         — both: PNG/SVG/PDF (headless uses CPU rasterizer)
+        node.ts           — both: get/tree node info
+        create.ts         — attached: create nodes
+        set.ts            — attached: set node properties
+        screenshot.ts     — both: render page to PNG
+        diff.ts           — headless: visual diff two files
+        analyze/
+          colors.ts       — both: color palette analysis
+          spacing.ts      — both: spacing consistency
+        mcp.ts            — both: start MCP server
+    package.json          — name: @open-pencil/cli, bin: { "open-pencil": "./src/index.ts" }
+  linter/                 — design lint rules (same pattern as figma-use/packages/linter)
+    src/
+      core/
+        types.ts          — LintMessage, LintConfig, LintResult, Rule, RuleContext
+        linter.ts         — Linter class: loads rules, walks SceneNode tree, collects messages
+        rule.ts           — defineRule() helper
+      rules/              — one file per rule
+        no-default-names.ts
+        pixel-perfect.ts
+        consistent-spacing.ts
+        consistent-radius.ts
+        no-hardcoded-colors.ts
+        no-empty-frames.ts
+        prefer-auto-layout.ts
+        touch-target-size.ts
+        color-contrast.ts
+      config/
+        presets.ts        — recommended, strict, accessibility
+      index.ts
+    package.json          — name: @open-pencil/linter, depends on @open-pencil/core
+  mcp/                    — MCP server for AI agents
+    src/
+      index.ts            — MCP protocol handler, tool definitions
+      tools.ts            — maps MCP tool calls → core/CLI operations
+    package.json          — name: @open-pencil/mcp
+  app/                    — ← current src/ (Vue + Tauri desktop app)
+    src/
+      components/         — Vue UI components (unchanged)
+      composables/        — Vue composables (unchanged)
+      stores/editor.ts    — imports from @open-pencil/core instead of ../engine/
+      constants.ts        — UI-only constants (colors kept, but types/engine constants → core)
+      demo.ts
+      ...
+    desktop/              — ← current desktop/ (Tauri Rust)
+    package.json          — name: @open-pencil/app, depends on @open-pencil/core
 ```
 
-`core` is the key extraction: the engine without rendering, importable by CLI, MCP, tests, and the app. The app's `src/engine/` imports from `core` instead of owning the types.
+### Implementation steps
 
-### Headless rendering
+**Step 1: Bun workspace setup**
+- Add `"workspaces"` to root `package.json`
+- Create `packages/core/package.json`, `packages/cli/package.json`, etc.
+- All packages use `"type": "module"` and TypeScript
 
-CanvasKit WASM has a CPU software rasterizer (`CanvasKit.MakeSurface(w, h)`) — no GPU, no WebGL, no DOM. Our `Renderer` class accepts any CanvasKit `Surface`, so the same render path works headless:
+**Step 2: Extract `@open-pencil/core`**
 
+The engine files are already clean — zero DOM imports. The work is:
+1. Move `src/engine/*.ts` → `packages/core/src/`
+2. Move `src/types.ts` → `packages/core/src/types.ts`
+3. Move `src/kiwi/` → `packages/core/src/kiwi/`
+4. Split `src/constants.ts`: engine constants → `packages/core/src/constants.ts`, UI constants stay in app
+5. Remove `@/` alias imports, use relative imports within core
+6. `canvaskit.ts` gets a headless init path: `initCanvasKit({ locateFile })` that works without `/canvaskit.wasm` served by Vite
+7. `fig-export.ts` IS_TAURI branch stays — but make the non-Tauri fflate path the default, Tauri path optional
+8. Create `index.ts` barrel exporting SceneGraph, SceneNode, SkiaRenderer, layout functions, codec, types
+
+After this step: `import { SceneGraph, SkiaRenderer } from '@open-pencil/core'` works from CLI, tests, and app.
+
+**Step 3: Update app to import from core**
+
+Replace all `@/engine/` and `@/types` imports in app code with `@open-pencil/core`:
+- `src/stores/editor.ts` — biggest consumer
+- `src/components/*.vue` — type imports
+- `src/composables/*.ts` — renderer, scene graph types
+- `src/demo.ts` — SceneGraph, SceneNode
+- Existing tests continue to work (`bun test`)
+
+**Step 4: WebSocket bridge in the app**
+
+Add a WS server to the running app (opt-in, e.g. `--ws-port 9333` or menu toggle):
+- Tauri side: use `tauri-plugin-localhost` or spawn from Rust, OR just do it in JS (the webview runs a full JS runtime)
+- Simpler: WS server in the Vue app itself using the browser's `WebSocket` API... no, the *app* needs to be the server
+- Best approach: tiny WS server in Rust (Tauri command) that forwards messages to the webview via Tauri events
+- OR: use the Vite dev server in dev mode, add WS endpoint. In production, Tauri Rust side runs a `tungstenite` WS server
+
+Protocol (JSON-RPC 2.0):
+```json
+{"jsonrpc":"2.0","id":1,"method":"eval","params":{"code":"editor.graph.getNode('0:1')"}}
+{"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"width":1920,"height":1080}}
+{"jsonrpc":"2.0","id":3,"method":"createNode","params":{"type":"RECTANGLE","x":0,"y":0,"width":100,"height":100}}
+```
+
+The webview handler: receives JSON-RPC, calls editor store methods, returns results. `eval` uses `new Function()` with the store in scope.
+
+**Step 5: Headless document context**
+
+`packages/cli/src/headless.ts`:
 ```ts
-const surface = ck.MakeSurface(width, height)
-const renderer = new Renderer(ck, surface)
-renderer.render(graph, viewport)
-const png = surface.makeImageSnapshot().encodeToBytes(ck.ImageFormat.PNG, 100)
+import CanvasKitInit from 'canvaskit-wasm'
+import { SceneGraph, SkiaRenderer, readFigFile } from '@open-pencil/core'
+
+export async function loadDocument(filePath: string) {
+  const data = await Bun.file(filePath).arrayBuffer()
+  const graph = new SceneGraph()
+  await readFigFile(new File([data], filePath), graph)
+  return graph
+}
+
+export async function renderDocument(graph: SceneGraph, opts: { width: number, height: number }) {
+  const ck = await CanvasKitInit()
+  const surface = ck.MakeSurface(opts.width, opts.height)!
+  const renderer = new SkiaRenderer(ck, surface)
+  renderer.viewportWidth = opts.width
+  renderer.viewportHeight = opts.height
+  // ... set zoom to fit, render
+  renderer.render(graph, new Set())
+  return surface.makeImageSnapshot().encodeToBytes(ck.ImageFormat.PNG, 100)!
+}
 ```
 
-This means export, screenshot, and visual diffing all work in CI without a display server.
+**Step 6: CLI commands**
 
-### CLI commands (matching figma-use where applicable)
+Use `citty` (same as figma-use) for command framework:
+```
+open-pencil lint design.fig --preset recommended
+open-pencil export design.fig --format png --page "Home"
+open-pencil node tree design.fig
+open-pencil find design.fig --type RECTANGLE --name "Button*"
+open-pencil diff v1.fig v2.fig --output diff.png
+open-pencil screenshot --port 9333 --output screen.png
+open-pencil eval --port 9333 "editor.select(['0:5'])"
+open-pencil mcp --port 9333
+```
 
-| Command | Mode | Description |
-|---------|------|-------------|
-| `eval <code>` | attached | Run JS in editor context |
-| `find <query>` | both | Find nodes by name, type, XPath |
-| `lint` | both | Run design linter rules on .fig/.openpencil file |
-| `export <format>` | both | Export page/node as PNG/SVG/PDF (headless uses CPU rasterizer) |
-| `node get <id>` | both | Get node properties |
-| `node tree` | both | Print node tree |
-| `create <type>` | attached | Create a node |
-| `set <prop> <value>` | attached | Set node property |
-| `analyze colors` | both | Analyze color palette |
-| `analyze spacing` | both | Analyze spacing consistency |
-| `mcp` | both | Start MCP server |
-| `open <file>` | both | Open .fig/.openpencil file |
-| `screenshot` | both | Render current page to PNG (headless uses CPU rasterizer) |
-| `diff <a> <b>` | headless | Visual diff two files/snapshots, output overlay PNG |
+Headless commands take a file path. Attached commands take `--port`.
 
-### Why not a Tauri CLI?
+**Step 7: Linter**
 
-Tauri is a GUI framework — no headless mode. A separate Bun-based CLI that imports `core` directly is simpler, faster to start, and works in CI (Docker, GitHub Actions) without X11/Wayland.
+Port the figma-use linter architecture but adapt types from `FigmaNode` → `SceneNode`:
+- `Linter` class walks the `SceneGraph` tree
+- Rules get `SceneNode` + `RuleContext` (same pattern: `defineRule`, `context.report()`)
+- Start with rules that make sense for our node model: `no-default-names`, `pixel-perfect`, `consistent-spacing`, `no-empty-frames`, `prefer-auto-layout`, `touch-target-size`
+- Presets: recommended, strict
+- Output: text (with colors) and JSON
+
+**Step 8: MCP server**
+
+Wrap CLI operations as MCP tools. Two modes:
+- **Headless MCP**: load a file, expose read-only tools (lint, find, analyze, export)
+- **Attached MCP**: connect to running app, expose all tools (create, set, eval, screenshot)
+
+Tool definitions generated from command schemas (like figma-use's `mcp-tools.json`).
+
+### Dependencies
+
+| Package | New deps | Existing (from app) |
+|---------|----------|---------------------|
+| core | — | canvaskit-wasm, yoga-layout, fflate, fzstd, culori |
+| cli | citty, consola | — |
+| linter | — | @open-pencil/core |
+| mcp | @modelcontextprotocol/sdk | @open-pencil/core, @open-pencil/cli |
+| app | — | vue, reka-ui, tailwindcss, @tauri-apps/*, @open-pencil/core |
+
+### Risks
+
+- **CanvasKit WASM in Bun**: should work (WASM support is stable in Bun), but need to verify `MakeSurface` CPU path. Fallback: use Node.js for headless if Bun has issues.
+- **Font loading in headless**: `fonts.ts` currently uses `queryLocalFonts()` (browser API). Headless needs `fs.readFile` for font files or a bundled default font. Start with a single bundled Inter font for headless rendering.
+- **core extraction scope creep**: keep the first extraction mechanical — move files, fix imports, verify tests pass. Don't refactor APIs yet.
 
 ---
 
