@@ -558,6 +558,19 @@ return { id: rootId, name: pageData.name ?? 'Imported root' }
 `
 }
 
+function buildDeleteEmptyPlaceholderPageCode(pageName) {
+  return `
+const placeholderName = ${JSON.stringify(pageName)}
+const pages = figma.graph.getPages(true)
+const placeholder = pages.find((page) => page.name === placeholderName)
+if (!placeholder) return { deleted: false, reason: 'missing' }
+if (placeholder.childIds.length > 0) return { deleted: false, reason: 'not-empty', id: placeholder.id }
+if (pages.length <= 1) return { deleted: false, reason: 'single-page', id: placeholder.id }
+figma.graph.deleteNode(placeholder.id)
+return { deleted: true, id: placeholder.id }
+`
+}
+
 function base64FromBytes(bytes) {
   return Buffer.from(bytes).toString('base64')
 }
@@ -579,6 +592,7 @@ async function main() {
   const livePages = await rpc(token, 'pages', {})
   const existingNames = new Set((livePages ?? []).map((page) => page.name))
   const sourcePages = (source.children ?? []).filter((child) => child?.type === 'frame' && child?.reusable !== true)
+  const sourcePageNames = new Set(sourcePages.map((page) => page.name))
 
   const targets = sourcePages.filter((page) => {
     if (options.only.size > 0 && !options.only.has(page.name)) return false
@@ -614,6 +628,19 @@ async function main() {
     })
     await callTool(token, 'update_node', { id: result.id, x: 0 })
     console.log(`  Imported root ${result.name} (${result.id})`)
+  }
+
+  if (!sourcePageNames.has('Page 1')) {
+    const fallbackPage = targets[0]?.name ?? sourcePages[0]?.name ?? null
+    if (fallbackPage) {
+      await callTool(token, 'switch_page', { page: fallbackPage })
+    }
+    const cleanup = await rpc(token, 'eval', {
+      code: buildDeleteEmptyPlaceholderPageCode('Page 1')
+    })
+    if (cleanup?.deleted) {
+      console.log(`\nRemoved empty placeholder page Page 1 (${cleanup.id})`)
+    }
   }
 }
 

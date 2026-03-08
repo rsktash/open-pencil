@@ -5,6 +5,7 @@ import {
   isFontLoaded,
   markFontLoaded,
   styleToWeight,
+  weightToFigmaStyle,
   weightToStyle,
   SceneGraph,
 } from '@open-pencil/core'
@@ -53,6 +54,25 @@ describe('weightToStyle', () => {
   test('appends Italic suffix', () => {
     expect(weightToStyle(400, true)).toBe('Medium Italic')
     expect(weightToStyle(700, true)).toBe('Bold Italic')
+  })
+})
+
+describe('weightToFigmaStyle', () => {
+  test('maps weights to figma-compatible style names', () => {
+    expect(weightToFigmaStyle(100)).toBe('Thin')
+    expect(weightToFigmaStyle(200)).toBe('Extra Light')
+    expect(weightToFigmaStyle(300)).toBe('Light')
+    expect(weightToFigmaStyle(400)).toBe('Regular')
+    expect(weightToFigmaStyle(500)).toBe('Medium')
+    expect(weightToFigmaStyle(600)).toBe('Semi Bold')
+    expect(weightToFigmaStyle(700)).toBe('Bold')
+    expect(weightToFigmaStyle(800)).toBe('Extra Bold')
+    expect(weightToFigmaStyle(900)).toBe('Black')
+  })
+
+  test('appends Italic suffix', () => {
+    expect(weightToFigmaStyle(400, true)).toBe('Regular Italic')
+    expect(weightToFigmaStyle(700, true)).toBe('Bold Italic')
   })
 })
 

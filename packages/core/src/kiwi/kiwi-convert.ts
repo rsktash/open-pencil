@@ -555,7 +555,7 @@ export function nodeChangeToProps(
     textTruncation: (nc.textTruncation as string) === 'ENDING' ? 'ENDING' : 'DISABLED',
     autoRename: (nc.autoRename as boolean) ?? true,
     boundVariables: extractBoundVariables(nc),
-    clipsContent: nc.frameMaskDisabled === false,
+    clipsContent: (nc.clipsContent as boolean | undefined) ?? nc.frameMaskDisabled === false,
     componentId: extractSymbolId(nc)
   }
 }

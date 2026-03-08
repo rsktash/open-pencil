@@ -688,6 +688,12 @@ export function createEditorStore() {
     return exportFigFile(graph, _ck ?? undefined, _renderer ?? undefined, state.currentPageId)
   }
 
+  function buildFigmaCompatFigFile() {
+    return exportFigFile(graph, _ck ?? undefined, _renderer ?? undefined, undefined, {
+      target: 'figma'
+    })
+  }
+
   async function saveFigFile(): Promise<boolean> {
     if (filePath || fileHandle) {
       await writeFile(await buildFigFile())
@@ -752,6 +758,46 @@ export function createEditorStore() {
     state.documentName = filename.replace(/\.fig$/i, '')
     downloadBlob(new Uint8Array(data), filename, 'application/octet-stream')
     savedVersion.value = state.sceneVersion
+    return true
+  }
+
+  async function exportFigmaCompatFigFile(): Promise<boolean> {
+    const data = await buildFigmaCompatFigFile()
+    const suggestedName = `${state.documentName || 'Untitled'}-figma.fig`
+
+    if (IS_TAURI) {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const path = await save({
+        defaultPath: suggestedName,
+        filters: [{ name: 'Figma file', extensions: ['fig'] }]
+      })
+      if (!path) return false
+      const { writeFile: tauriWrite } = await import('@tauri-apps/plugin-fs')
+      await tauriWrite(path, data)
+      return true
+    }
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: 'Figma file',
+              accept: { 'application/octet-stream': ['.fig'] }
+            }
+          ]
+        })
+        const writable = await handle.createWritable()
+        await writable.write(data)
+        await writable.close()
+        return true
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return false
+      }
+    }
+
+    downloadBlob(data, suggestedName, 'application/octet-stream')
     return true
   }
 
@@ -2176,6 +2222,7 @@ export function createEditorStore() {
     saveFigFile,
     setCanvasKit,
     saveFigFileAs,
+    exportFigmaCompatFigFile,
     renderExportImage,
     exportSelection,
     updateNode,

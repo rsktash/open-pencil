@@ -1585,6 +1585,11 @@ pub fn run() {
                 )
                 .separator()
                 .item(
+                    &MenuItemBuilder::new("Export for Figma…")
+                        .id("export-figma")
+                        .build(app)?,
+                )
+                .item(
                     &MenuItemBuilder::new("Export…")
                         .id("export")
                         .accelerator("CmdOrCtrl+Shift+E")

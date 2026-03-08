@@ -82,6 +82,7 @@ const fileMenu = computed<MenuItem[]>(() => {
     { separator: true },
     { label: 'Save', shortcut: `${mod}S`, action: () => void store.saveFigFile() },
     { label: 'Save as…', shortcut: `${mod}⇧S`, action: () => void store.saveFigFileAs() },
+    { label: 'Export for Figma…', action: () => void store.exportFigmaCompatFigFile() },
     { separator: true },
     {
       label: 'Export selection…',

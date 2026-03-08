@@ -1,36 +1,42 @@
 import { defineCommand } from 'citty'
 import { basename, extname, resolve } from 'node:path'
 
-import { renderNodesToSVG, sceneNodeToJSX, selectionToJSX } from '@open-pencil/core'
+import { exportFigFile, renderNodesToSVG, sceneNodeToJSX, selectionToJSX } from '@open-pencil/core'
 
 import { loadDocument, loadFonts, exportNodes, exportThumbnail } from '../headless'
 import { isAppMode, requireFile, rpc } from '../app-client'
 import { ok, printError } from '../format'
-import type { ExportFormat, JSXFormat } from '@open-pencil/core'
+import type { ExportFormat, ExportTarget, JSXFormat } from '@open-pencil/core'
 
 const RASTER_FORMATS = ['PNG', 'JPG', 'WEBP']
-const ALL_FORMATS = [...RASTER_FORMATS, 'SVG', 'JSX']
+const ALL_FORMATS = [...RASTER_FORMATS, 'SVG', 'JSX', 'FIG']
+const FIG_TARGETS = ['openpencil', 'figma'] as const
 const JSX_STYLES = ['openpencil', 'tailwind']
 
 export default defineCommand({
-  meta: { description: 'Export a .fig file to PNG, JPG, WEBP, SVG, or JSX' },
+  meta: { description: 'Export a .fig file to PNG, JPG, WEBP, SVG, JSX, or Figma-compatible .fig' },
   args: {
     file: { type: 'positional', description: '.fig file path (omit to connect to running app)', required: false },
     output: { type: 'string', alias: 'o', description: 'Output file path (default: <name>.<format>)' },
-    format: { type: 'string', alias: 'f', description: 'Export format: png, jpg, webp, svg, jsx (default: png)', default: 'png' },
+    format: { type: 'string', alias: 'f', description: 'Export format: png, jpg, webp, svg, jsx, fig (default: png)', default: 'png' },
     scale: { type: 'string', alias: 's', description: 'Export scale (default: 1)', default: '1' },
     quality: { type: 'string', alias: 'q', description: 'Quality 0-100 for JPG/WEBP (default: 90)' },
     page: { type: 'string', description: 'Page name (default: first page)' },
     node: { type: 'string', description: 'Node ID to export (default: all top-level nodes)' },
     style: { type: 'string', description: 'JSX style: openpencil, tailwind (default: openpencil)', default: 'openpencil' },
+    target: {
+      type: 'string',
+      description: 'Target when exporting .fig: openpencil or figma (default: openpencil)',
+      default: 'openpencil'
+    },
     thumbnail: { type: 'boolean', description: 'Export page thumbnail instead of full render' },
     width: { type: 'string', description: 'Thumbnail width (default: 1920)', default: '1920' },
     height: { type: 'string', description: 'Thumbnail height (default: 1080)', default: '1080' }
   },
   async run({ args }) {
-    const format = args.format.toUpperCase() as ExportFormat | 'JSX'
+    const format = args.format.toUpperCase() as ExportFormat | 'JSX' | 'FIG'
     if (!ALL_FORMATS.includes(format)) {
-      printError(`Invalid format "${args.format}". Use png, jpg, webp, svg, or jsx.`)
+      printError(`Invalid format "${args.format}". Use png, jpg, webp, svg, jsx, or fig.`)
       process.exit(1)
     }
 
@@ -39,7 +45,17 @@ export default defineCommand({
       process.exit(1)
     }
 
+    if (format === 'FIG' && !FIG_TARGETS.includes(args.target as (typeof FIG_TARGETS)[number])) {
+      printError(`Invalid fig target "${args.target}". Use openpencil or figma.`)
+      process.exit(1)
+    }
+
     if (isAppMode(args.file)) {
+      if (format === 'FIG') {
+        printError('FIG export is only supported from a file path right now.')
+        process.exit(1)
+      }
+
       if (format === 'SVG') {
         const result = await rpc<{ svg: string }>('tool', { name: 'export_svg', args: { ids: args.node ? [args.node] : undefined } })
         if (!result.svg) {
@@ -111,6 +127,16 @@ export default defineCommand({
       const output = resolve(args.output ?? `${defaultName}.jsx`)
       await Bun.write(output, jsxStr)
       console.log(ok(`Exported ${output} (${(jsxStr.length / 1024).toFixed(1)} KB)`))
+      return
+    }
+
+    if (format === 'FIG') {
+      const output = resolve(args.output ?? `${defaultName}-${args.target}.fig`)
+      const data = await exportFigFile(graph, undefined, undefined, undefined, {
+        target: args.target as ExportTarget
+      })
+      await Bun.write(output, data)
+      console.log(ok(`Exported ${output} (${(data.length / 1024).toFixed(1)} KB)`))
       return
     }
 

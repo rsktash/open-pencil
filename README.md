@@ -40,6 +40,7 @@ Your design files are yours. Your tools should be too.
 ## Features
 
 - **Figma .fig file import and export** — read and write native Figma files
+- **Figma-targeted export** — separate `Export for Figma…` flow flattens layout/component semantics for better import fidelity in Figma, without changing native OpenPencil saves
 - **Copy & paste with Figma** — select nodes in Figma, paste into OpenPencil (and vice versa). Uses the same Kiwi binary format as .fig files
 - **Real-time collaboration** — P2P via WebRTC, no server required. Cursors, presence, follow mode
 - **Drawing tools** — shapes, pen tool with vector networks, rich text with system fonts, auto-layout, components with live sync, variables with modes and collections

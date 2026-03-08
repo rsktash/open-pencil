@@ -64,6 +64,11 @@ function countByType(nodes: SceneNode[]): Map<NodeType, number> {
   return counts
 }
 
+async function sha1Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-1', Uint8Array.from(bytes))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 let parsed: SceneGraph
 let allNodes: SceneNode[]
 
@@ -268,6 +273,7 @@ heavy('parse heavy .fig files', () => {
 describe('roundtrip: export → re-import', () => {
   let reImported: SceneGraph
   let reImportedNodes: SceneNode[]
+  let canonicalImageHash: string
 
   beforeAll(async () => {
     await initCodec()
@@ -356,7 +362,9 @@ describe('roundtrip: export → re-import', () => {
     })
 
     const imageHash = '00112233445566778899aabbccddeeff00112233'
-    graph.images.set(imageHash, new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
+    const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+    canonicalImageHash = await sha1Hex(imageBytes)
+    graph.images.set(imageHash, imageBytes)
     graph.createNode('RECTANGLE', container.id, {
       name: 'Image Fill',
       x: 24,
@@ -446,9 +454,9 @@ describe('roundtrip: export → re-import', () => {
     const imageFill = reImportedNodes.find((n) => n.name === 'Image Fill')!
     expect(imageFill.fills).toHaveLength(1)
     expect(imageFill.fills[0].type).toBe('IMAGE')
-    expect(imageFill.fills[0].imageHash).toBe('00112233445566778899aabbccddeeff00112233')
+    expect(imageFill.fills[0].imageHash).toBe(canonicalImageHash)
     expect(imageFill.fills[0].imageScaleMode).toBe('FIT')
-    expect(reImported.images.get('00112233445566778899aabbccddeeff00112233')).toEqual(
+    expect(reImported.images.get(canonicalImageHash)).toEqual(
       new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
     )
   })

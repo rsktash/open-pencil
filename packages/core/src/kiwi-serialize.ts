@@ -6,9 +6,14 @@ import { weightToStyle } from './fonts'
 import { encodeVectorNetworkBlob } from './vector'
 
 import type { NodeChange, Paint } from './kiwi/codec'
-import type { SceneGraph, SceneNode, CharacterStyleOverride } from './scene-graph'
+import type { SceneGraph, SceneNode, CharacterStyleOverride, NodeType } from './scene-graph'
 
 type KiwiNodeChange = NodeChange & Record<string, unknown>
+export interface KiwiSerializeOptions {
+  imageHashMap?: ReadonlyMap<string, string>
+  fontStyleFormatter?: (weight: number, italic?: boolean) => string
+  typeOverrides?: ReadonlyMap<string, NodeType>
+}
 
 export function parseFigKiwiChunks(binary: Uint8Array): Uint8Array[] | null {
   const header = new TextDecoder().decode(binary.slice(0, 8))
@@ -123,7 +128,15 @@ function imageHashToBytes(hash: string): Uint8Array {
   return bytes
 }
 
-function exportTextData(node: SceneNode): NodeChange['textData'] {
+function formatSerializedFontStyle(
+  weight: number | undefined,
+  italic: boolean | undefined,
+  options: KiwiSerializeOptions
+): string {
+  return (options.fontStyleFormatter ?? weightToStyle)(weight ?? 400, italic ?? false)
+}
+
+function exportTextData(node: SceneNode, options: KiwiSerializeOptions): NodeChange['textData'] {
   const runs = node.styleRuns
   if (runs.length === 0) {
     return { characters: node.text }
@@ -152,7 +165,7 @@ function exportTextData(node: SceneNode): NodeChange['textData'] {
     const italic = style.italic ?? node.italic
     override.fontName = {
       family: style.fontFamily ?? node.fontFamily,
-      style: weightToStyle(weight, italic),
+      style: formatSerializedFontStyle(weight, italic, options),
       postscript: ''
     }
     if (style.fontSize !== undefined) override.fontSize = style.fontSize
@@ -179,15 +192,20 @@ export function sceneNodeToKiwi(
   childIndex: number,
   localIdCounter: { value: number },
   graph: SceneGraph,
-  blobs: Uint8Array[]
+  blobs: Uint8Array[],
+  options: KiwiSerializeOptions = {}
 ): KiwiNodeChange[] {
   const localID = localIdCounter.value++
   const guid = { sessionID: 1, localID }
   const sx = node.flipX ? -1 : 1
   const cos = Math.cos((node.rotation * Math.PI) / 180)
   const sin = Math.sin((node.rotation * Math.PI) / 180)
+  const serializedType = options.typeOverrides?.get(node.id) ?? node.type
 
   const fillPaints = node.fills.map((f) => {
+    const serializedImageHash = f.imageHash
+      ? options.imageHashMap?.get(f.imageHash) ?? f.imageHash
+      : null
     const paint: Paint = {
       type: f.type,
       color: f.color,
@@ -199,7 +217,7 @@ export function sceneNodeToKiwi(
       paint.stops = f.gradientStops.map((s) => ({ color: s.color, position: s.position }))
     }
     if (f.gradientTransform) paint.transform = f.gradientTransform
-    if (f.imageHash) paint.image = { hash: imageHashToBytes(f.imageHash) }
+    if (serializedImageHash) paint.image = { hash: imageHashToBytes(serializedImageHash) }
     if (f.imageScaleMode) paint.imageScaleMode = f.imageScaleMode
     if (f.imageTransform) paint.transform = f.imageTransform
     return paint
@@ -216,7 +234,7 @@ export function sceneNodeToKiwi(
   const nc: KiwiNodeChange = {
     guid,
     parentIndex: { guid: parentGuid, position: fractionalPosition(childIndex) },
-    type: mapToFigmaType(node.type),
+    type: mapToFigmaType(serializedType),
     name: node.name,
     visible: node.visible,
     opacity: node.opacity,
@@ -274,11 +292,11 @@ export function sceneNodeToKiwi(
     nc.fontSize = node.fontSize
     nc.fontName = {
       family: node.fontFamily,
-      style: weightToStyle(node.fontWeight, node.italic),
+      style: formatSerializedFontStyle(node.fontWeight, node.italic, options),
       postscript: ''
     }
-    nc.textData = exportTextData(node)
-    nc.textAutoResize = 'WIDTH_AND_HEIGHT'
+    nc.textData = exportTextData(node, options)
+    nc.textAutoResize = node.textAutoResize
     nc.textAlignHorizontal = node.textAlignHorizontal
     if (node.lineHeight != null) nc.lineHeight = { value: node.lineHeight, units: 'PIXELS' }
     if (node.letterSpacing !== 0) nc.letterSpacing = { value: node.letterSpacing, units: 'PIXELS' }
@@ -287,8 +305,15 @@ export function sceneNodeToKiwi(
     }
   }
 
-  if (node.type === 'FRAME' || node.type === 'GROUP') {
-    nc.frameMaskDisabled = node.type === 'GROUP'
+  if (
+    node.type === 'FRAME' ||
+    node.type === 'GROUP' ||
+    node.type === 'COMPONENT' ||
+    node.type === 'COMPONENT_SET' ||
+    node.type === 'INSTANCE' ||
+    node.type === 'SECTION'
+  ) {
+    nc.frameMaskDisabled = node.type === 'GROUP' ? true : !node.clipsContent
     if (node.clipsContent) nc.clipsContent = true
   }
 
@@ -337,7 +362,7 @@ export function sceneNodeToKiwi(
   const result: KiwiNodeChange[] = [nc]
   const children = graph.getChildren(node.id)
   for (let i = 0; i < children.length; i++) {
-    result.push(...sceneNodeToKiwi(children[i], guid, i, localIdCounter, graph, blobs))
+    result.push(...sceneNodeToKiwi(children[i], guid, i, localIdCounter, graph, blobs, options))
   }
 
   return result

@@ -5,6 +5,7 @@
 ### Features
 
 - MCP live desktop mode — `openpencil-mcp --app desktop` can now proxy tool calls into an already opened OpenPencil desktop app instance through the local automation bridge
+- Figma-targeted export — new `Export for Figma…` action and CLI `bun open-pencil export file.fig --format fig --target figma` generate a Figma-oriented `.fig` that flattens layout/component semantics for better import fidelity without changing OpenPencil’s native save format
 
 ### Improvements
 
@@ -50,6 +51,7 @@
 
 ### Fixes
 
+- Fix Figma-target font style serialization — exported `.fig` files now write Figma-compatible style names like `Regular`, `Semi Bold`, and `Extra Bold` instead of OpenPencil’s internal compact names, reducing missing/ignored text on Figma import
 - Fix desktop CLI backend discovery on macOS and Windows app launches — Codex CLI and Claude Code CLI now resolve binaries from common user/Homebrew/npm install paths even when the app PATH is limited
 - Fix AI chat attachment submission — pasted images and attached files now normalize to SDK file parts before send, and Codex CLI temp-directory runs skip the git repo trust check
 - Improve AI chat transcript structure — assistant text is now split around tool activity instead of being merged into one block, and live thinking steps appear inline while the response is still being generated

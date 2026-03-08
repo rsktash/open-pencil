@@ -104,6 +104,9 @@ const MENU_ACTIONS: Record<string, () => void> = {
   'save-as': () => {
     void store.saveFigFileAs()
   },
+  'export-figma': () => {
+    void store.exportFigmaCompatFigFile()
+  },
   duplicate: () => store.duplicateSelected(),
   delete: () => store.deleteSelected(),
   group: () => store.groupSelected(),

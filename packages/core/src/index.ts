@@ -97,6 +97,7 @@ export {
   ensureCJKFallback,
   getCJKFallbackFamily,
   styleToWeight,
+  weightToFigmaStyle,
   weightToStyle
 } from './fonts'
 export {
@@ -142,6 +143,7 @@ export {
 } from './svg-export'
 export { svg, renderSVGNode, type SVGNode } from './svg-node'
 export { exportFigFile } from './fig-export'
+export type { ExportTarget, FigExportOptions } from './fig-export'
 export {
   FIG_KIWI_VERSION,
   buildFigKiwi,
