@@ -29,6 +29,7 @@ export async function handleAutomationRequest(
     const wrappedCode = code.trim().startsWith('return') ? code : `return (async () => { ${code} })()`
     const fn = new AsyncFunction('figma', wrappedCode)
     const result = await fn(figma)
+    computeAllLayouts(store.graph)
     store.requestRender()
     return { ok: true, result: result ?? null }
   }
@@ -62,6 +63,16 @@ export async function handleAutomationRequest(
     if (!def) throw new Error(`Unknown tool: ${toolName}`)
     const figma = makeFigmaFromStore(store)
     const result = await def.execute(figma, toolArgs)
+    if (
+      toolName === 'switch_page' &&
+      result &&
+      typeof result === 'object' &&
+      'id' in result &&
+      typeof result.id === 'string'
+    ) {
+      store.state.currentPageId = result.id
+      store.state.selectedIds.clear()
+    }
     if (def.mutates) {
       computeAllLayouts(store.graph, store.state.currentPageId)
       store.requestRender()
