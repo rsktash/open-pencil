@@ -16,12 +16,7 @@ import type { ChatComposerSubmission } from '@/components/chat/types'
 import { uiButton } from '@/components/ui/button'
 import { useAIChat } from '@/composables/use-chat'
 import { toast } from '@/composables/use-toast'
-import {
-  CHAT_IMAGE_UPLOAD_MAX_BYTES,
-  CHAT_IMAGE_UPLOAD_MAX_EDGE,
-  CHAT_IMAGE_UPLOAD_QUALITY,
-  IS_TAURI
-} from '@/constants'
+import { IS_TAURI } from '@/constants'
 
 import { isFileUIPart, isReasoningUIPart, isTextUIPart, isToolUIPart, type FileUIPart } from 'ai'
 
@@ -34,7 +29,7 @@ const props = withDefaults(
   }
 )
 
-const { activeCliSession, chat, isConfigured, ensureChat, selectedModel, startNewSession } = useAIChat()
+const { activeCliSession, chat, isConfigured, ensureChat, startNewSession } = useAIChat()
 const messagesEnd = ref<HTMLDivElement>()
 const chatInputRef = ref<{
   attachFiles: (files: Iterable<File>) => void
@@ -257,87 +252,11 @@ async function fileToUIPart(file: File): Promise<FileUIPart> {
   }
 }
 
-function fileExtensionForMimeType(mediaType: string): string {
-  if (mediaType === 'image/jpeg') return 'jpg'
-  if (mediaType === 'image/webp') return 'webp'
-  if (mediaType === 'image/png') return 'png'
-  return mediaType.replace(/^image\//, '') || 'img'
-}
-
-function renameFileExtension(name: string, nextExtension: string): string {
-  const baseName = name.replace(/\.[^.]+$/, '')
-  return `${baseName}.${nextExtension}`
-}
-
-function canvasToBlob(
-  canvas: HTMLCanvasElement,
-  type: string,
-  quality?: number
-): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    canvas.toBlob(resolve, type, quality)
-  })
-}
-
-async function optimizeAttachmentFile(file: File): Promise<File> {
-  if (!file.type.startsWith('image/')) return file
-  if (selectedModel.value.backend === 'claude-code' || selectedModel.value.backend === 'codex-cli') {
-    return file
-  }
-  if (file.type === 'image/png') return file
-
-  const bitmap = await createImageBitmap(file).catch(() => null)
-  if (!bitmap) return file
-
-  try {
-    const longestEdge = Math.max(bitmap.width, bitmap.height)
-    const scale = Math.min(1, CHAT_IMAGE_UPLOAD_MAX_EDGE / longestEdge)
-    const targetWidth = Math.max(1, Math.round(bitmap.width * scale))
-    const targetHeight = Math.max(1, Math.round(bitmap.height * scale))
-    const shouldTranscode =
-      targetWidth !== bitmap.width ||
-      targetHeight !== bitmap.height ||
-      file.size > CHAT_IMAGE_UPLOAD_MAX_BYTES
-
-    if (!shouldTranscode) return file
-
-    const canvas = document.createElement('canvas')
-    canvas.width = targetWidth
-    canvas.height = targetHeight
-    const context = canvas.getContext('2d')
-    if (!context) return file
-
-    context.drawImage(bitmap, 0, 0, targetWidth, targetHeight)
-
-    const preferredMimeType =
-      file.type === 'image/webp'
-        ? 'image/webp'
-        : file.type === 'image/jpeg'
-          ? 'image/jpeg'
-          : 'image/png'
-    const blob =
-      (await canvasToBlob(canvas, preferredMimeType, CHAT_IMAGE_UPLOAD_QUALITY)) ??
-      (await canvasToBlob(canvas, 'image/png'))
-    if (!blob) return file
-    if (blob.size >= file.size && targetWidth === bitmap.width && targetHeight === bitmap.height) {
-      return file
-    }
-
-    return new File([blob], renameFileExtension(file.name, fileExtensionForMimeType(blob.type)), {
-      type: blob.type,
-      lastModified: file.lastModified
-    })
-  } finally {
-    bitmap.close()
-  }
-}
-
 async function sendMessageWithAttachments(payload: ChatComposerSubmission) {
   const activeChat = ensureChat()
   if (!activeChat) return
 
-  const optimizedFiles = await Promise.all(payload.files.map((file) => optimizeAttachmentFile(file)))
-  const files = await Promise.all(optimizedFiles.map((file) => fileToUIPart(file)))
+  const files = await Promise.all(payload.files.map((file) => fileToUIPart(file)))
   await activeChat.sendMessage({
     text: payload.text,
     files

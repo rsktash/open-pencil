@@ -41,6 +41,19 @@ function aggregateCaptureRect(nodes: readonly FigmaNodeProxy[]): ToolCaptureRect
   }
 }
 
+function resolveCaptureScale(
+  nodes: readonly FigmaNodeProxy[],
+  requestedScale: number,
+  maxLongEdge: number
+): number {
+  if (maxLongEdge <= 0) return requestedScale
+  const rect = aggregateCaptureRect(nodes)
+  if (!rect) return requestedScale
+  const longEdge = Math.max(rect.width, rect.height)
+  if (longEdge <= 0) return requestedScale
+  return Math.min(requestedScale, maxLongEdge / longEdge)
+}
+
 function buildCaptureHighlight(
   target: 'PAGE' | 'SELECTION' | 'NODES',
   nodes: readonly FigmaNodeProxy[]
@@ -389,6 +402,14 @@ export const takeScreenshot = defineTool({
       default: 1,
       min: 0.1,
       max: 4
+    },
+    max_long_edge: {
+      type: 'number',
+      description:
+        'Optional maximum output size for the longest image edge in pixels. Defaults to 2000 for AI-safe comparison captures.',
+      default: 2000,
+      min: 256,
+      max: 8192
     }
   },
   execute: async (figma, args) => {
@@ -421,8 +442,11 @@ export const takeScreenshot = defineTool({
     }
 
     const format = ((args.format as string) ?? 'PNG').toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
+    const requestedScale = args.scale ?? 1
+    const maxLongEdge = args.max_long_edge ?? 2000
+    const effectiveScale = resolveCaptureScale(screenshotNodes, requestedScale, maxLongEdge)
     const data = await figma.exportImage(screenshotIds, {
-      scale: args.scale ?? 1,
+      scale: effectiveScale,
       format
     })
     if (!data || data.length === 0) return { error: 'No visible nodes to capture' }
@@ -441,7 +465,9 @@ export const takeScreenshot = defineTool({
       ...(captureHighlight ? { captureHighlight } : {}),
       mimeType: mimeMap[format],
       base64,
-      byteLength: data.length
+      byteLength: data.length,
+      scale: effectiveScale,
+      requestedScale
     }
   }
 })

@@ -131,6 +131,21 @@ bun add -g @open-pencil/mcp
 }
 ```
 
+**Live desktop app** — connect to an already opened OpenPencil window instead of opening `.fig` files headlessly:
+
+```json
+{
+  "mcpServers": {
+    "open-pencil": {
+      "command": "openpencil-mcp",
+      "args": ["--app", "desktop"]
+    }
+  }
+}
+```
+
+This mode talks to the running desktop app over its local automation bridge. Start the app, open a document, then start your MCP client.
+
 **HTTP** (scripts, browser extensions, CI):
 
 ```sh

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- MCP live desktop mode — `openpencil-mcp --app desktop` can now proxy tool calls into an already opened OpenPencil desktop app instance through the local automation bridge
+
 ## 0.8.0 — 2026-03-07
 
 ### Features

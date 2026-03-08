@@ -7,9 +7,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 
+import { resolveRuntimeOptions } from './runtime-options.js'
 import { createServer } from './server.js'
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf-8'))
+const runtime = resolveRuntimeOptions(process.argv.slice(2))
 const port = parseInt(process.env.PORT ?? '3100', 10)
 const host = process.env.HOST ?? '127.0.0.1'
 const authToken = process.env.OPENPENCIL_MCP_AUTH_TOKEN?.trim() || null
@@ -20,13 +22,16 @@ const sessions = new Map<string, { server: ReturnType<typeof createServer>; tran
 
 async function getOrCreateSession(sessionId?: string) {
   if (sessionId && sessions.has(sessionId)) {
-    return sessions.get(sessionId)!
+    const existing = sessions.get(sessionId)
+    if (existing) return existing
   }
 
   const id = sessionId ?? randomUUID()
   const server = createServer(pkg.version, {
     enableEval: false,
-    fileRoot
+    fileRoot,
+    mode: runtime.mode,
+    bridgeUrl: runtime.bridgeUrl
   })
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: () => id })
   await server.connect(transport)
@@ -79,7 +84,7 @@ app.all('/mcp', async (c) => {
   return transport.handleRequest(c.req.raw)
 })
 
-const isBun = typeof globalThis.Bun !== 'undefined'
+const isBun = globalThis.Bun !== undefined
 
 if (isBun) {
   Bun.serve({ fetch: app.fetch, port, hostname: host })
@@ -95,3 +100,4 @@ console.log(`  Auth:    ${authToken ? 'required (OPENPENCIL_MCP_AUTH_TOKEN)' : '
 console.log(`  CORS:    ${corsOrigin ?? 'disabled'}`)
 console.log(`  Eval:    disabled`)
 console.log(`  Root:    ${fileRoot}`)
+console.log(`  App:     ${runtime.mode}`)

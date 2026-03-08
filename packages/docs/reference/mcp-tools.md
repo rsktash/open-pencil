@@ -24,6 +24,21 @@ Add to your MCP config (e.g. `~/.claude/settings.json` or `.cursor/mcp.json`):
 }
 ```
 
+To connect to an already opened OpenPencil desktop app instead of opening `.fig` files headlessly:
+
+```json
+{
+  "mcpServers": {
+    "open-pencil": {
+      "command": "openpencil-mcp",
+      "args": ["--app", "desktop"]
+    }
+  }
+}
+```
+
+In desktop mode, the MCP server proxies tool calls into the running app over the local automation bridge. Start the app and open a document before starting the MCP client.
+
 Or run from source without installing:
 
 ::: code-group

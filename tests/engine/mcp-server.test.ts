@@ -28,6 +28,34 @@ async function createLinkedClient(options?: Parameters<typeof createServer>[1]) 
   }
 }
 
+async function withDesktopBridgeMock(
+  handler: (request: {
+    path: string
+    method: string
+    authorization: string | undefined
+    body: string
+  }) => { status?: number; payload: unknown },
+  run: (bridgeUrl: string) => Promise<void>
+) {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    const result = handler({
+      path: new URL(request.url).pathname,
+      method: request.method,
+      authorization: request.headers.get('authorization') ?? undefined,
+      body: await request.text()
+    })
+    return Response.json(result.payload, { status: result.status ?? 200 })
+  }
+
+  try {
+    await run('http://127.0.0.1:7600')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
 describe('MCP server', () => {
   let client: Client
   let cleanup: () => Promise<void>
@@ -57,6 +85,7 @@ describe('MCP server', () => {
     expect(names).toContain('create_shape')
     expect(names).toContain('set_fill')
     expect(names).toContain('get_page_tree')
+    expect(names).toContain('take_screenshot')
     expect(tools.length).toBeGreaterThan(70)
   })
 
@@ -254,6 +283,27 @@ describe('MCP server', () => {
     expect(data.count).toBe(2)
   })
 
+  test('take_screenshot returns image content for a created node', async () => {
+    await client.callTool({ name: 'new_document', arguments: {} })
+    const shape = parseResult(
+      await client.callTool({
+        name: 'create_shape',
+        arguments: { type: 'RECTANGLE', x: 0, y: 0, width: 120, height: 80, name: 'Shot' }
+      })
+    ) as { id: string }
+
+    const result = await client.callTool({
+      name: 'take_screenshot',
+      arguments: { ids: [shape.id], format: 'PNG', scale: 1 }
+    })
+
+    const imagePart = result.content[0] as { type: string; data?: string; mimeType?: string }
+    expect(imagePart.type).toBe('image')
+    expect(imagePart.mimeType).toBe('image/png')
+    expect(typeof imagePart.data).toBe('string')
+    expect(imagePart.data!.length).toBeGreaterThan(0)
+  })
+
   test('create_shape rejects invalid type enum', async () => {
     await client.callTool({ name: 'new_document', arguments: {} })
 
@@ -325,5 +375,78 @@ describe('MCP server', () => {
       await unlink(outsidePath).catch(() => {})
       await rm(rootDir, { recursive: true, force: true })
     }
+  })
+
+  test('desktop mode omits file tools and proxies read tools to the live app bridge', async () => {
+    await withDesktopBridgeMock(
+      ({ path, method, authorization, body }) => {
+        if (path === '/health' && method === 'GET') {
+          return { payload: { status: 'ok', token: 'desktop-token' } }
+        }
+
+        if (path === '/rpc' && method === 'POST') {
+          expect(authorization).toBe('Bearer desktop-token')
+          expect(JSON.parse(body)).toEqual({
+            command: 'tool',
+            args: { name: 'get_current_page', args: {} }
+          })
+          return { payload: { ok: true, result: { id: 'page-1', name: 'Page 1' } } }
+        }
+
+        return { status: 404, payload: { error: 'Not found' } }
+      },
+      async (bridgeUrl) => {
+        const custom = await createLinkedClient({ mode: 'desktop', bridgeUrl })
+        try {
+          const { tools } = await custom.client.listTools()
+          const names = tools.map((tool) => tool.name)
+          expect(names).not.toContain('open_file')
+          expect(names).not.toContain('save_file')
+          expect(names).not.toContain('new_document')
+          expect(names).toContain('get_current_page')
+
+          const result = await custom.client.callTool({
+            name: 'get_current_page',
+            arguments: {}
+          })
+          expect(parseResult(result)).toEqual({ id: 'page-1', name: 'Page 1' })
+        } finally {
+          await custom.close()
+        }
+      }
+    )
+  })
+
+  test('desktop mode returns image parts from live-app screenshot results', async () => {
+    await withDesktopBridgeMock(
+      ({ path, method }) => {
+        if (path === '/health' && method === 'GET') {
+          return { payload: { status: 'ok', token: 'desktop-token' } }
+        }
+
+        if (path === '/rpc' && method === 'POST') {
+          return {
+            payload: { ok: true, result: { base64: 'c2hvdA==', mimeType: 'image/png' } }
+          }
+        }
+
+        return { status: 404, payload: { error: 'Not found' } }
+      },
+      async (bridgeUrl) => {
+        const custom = await createLinkedClient({ mode: 'desktop', bridgeUrl })
+        try {
+          const result = await custom.client.callTool({
+            name: 'take_screenshot',
+            arguments: { target: 'PAGE', format: 'PNG' }
+          })
+          const imagePart = result.content[0] as { type: string; data?: string; mimeType?: string }
+          expect(imagePart.type).toBe('image')
+          expect(imagePart.data).toBe('c2hvdA==')
+          expect(imagePart.mimeType).toBe('image/png')
+        } finally {
+          await custom.close()
+        }
+      }
+    )
   })
 })

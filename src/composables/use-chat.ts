@@ -93,7 +93,10 @@ const SYSTEM_PROMPT = dedent`
   Always use tools to make changes. After creating nodes, briefly describe what you did.
   When the user asks to create a layout, use create_shape with FRAME, then set_layout for auto-layout.
   When the user provides a screenshot, mockup, or other reference image, use take_screenshot to inspect the current canvas before editing.
+  For screenshot comparison, prefer take_screenshot with format=PNG.
   Use target=PAGE for whole-screen comparisons and target=SELECTION or explicit ids for localized comparisons.
+  For PAGE captures, rely on the tool's default max_long_edge limit so the image stays safe for multi-image model requests.
+  Use scale=2 only for focused SELECTION or explicit node captures, and scale=3 only for very small UI details.
   Compare the current capture against the user attachment before making visual changes, then take another screenshot after substantial edits to verify the result.
   Use screenshots for visual verification and structural tools for the actual edits.
 `

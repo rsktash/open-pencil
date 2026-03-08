@@ -260,7 +260,10 @@ function buildDirectPrompt(
     - Do not edit files outside this session working directory.
     - After you finish, output only the final user-facing response in markdown. Do not output JSON.
     - When the user provides a screenshot, mockup, or other reference image, use take_screenshot before editing to inspect the current canvas state.
+    - For screenshot comparison, prefer take_screenshot with format=PNG.
     - Use take_screenshot with target=PAGE for whole-screen comparisons and target=SELECTION or explicit node ids for localized comparisons.
+    - For PAGE captures, rely on the tool's default max_long_edge limit so the image stays safe for multi-image model requests.
+    - Use scale=2 only for focused SELECTION or explicit node captures, and scale=3 only for very small UI details.
     - Compare the current capture against the user attachment before making visual edits, then take another screenshot after substantial changes to verify the result.
     - Use screenshots for visual verification and structural tools for the actual edits.
 

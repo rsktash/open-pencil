@@ -132,6 +132,34 @@ describe('take_screenshot', () => {
     expect(result.mimeType).toBe('image/png')
     expect(result.byteLength).toBe(4)
   })
+
+  test('clamps whole-page captures to the default max long edge', async () => {
+    const { figma } = setup()
+    const frame = figma.createFrame()
+    frame.resize(1200, 2600)
+
+    let capturedScale: number | undefined
+    ;(
+      figma as FigmaAPI & {
+        exportImage?: (nodeIds: string[], opts: { scale?: number; format?: string }) => Promise<Uint8Array>
+      }
+    ).exportImage = async (nodeIds, opts) => {
+      expect(nodeIds).toEqual([frame.id])
+      capturedScale = opts.scale
+      return new Uint8Array([137, 80, 78, 71])
+    }
+
+    const tool = ALL_TOOLS.find((t) => t.name === 'take_screenshot')!
+    const result = (await tool.execute(figma, {
+      target: 'PAGE',
+      format: 'PNG',
+      scale: 2
+    })) as any
+
+    expect(capturedScale).toBeCloseTo(2000 / 2600)
+    expect(result.requestedScale).toBe(2)
+    expect(result.scale).toBeCloseTo(2000 / 2600)
+  })
 })
 
 describe('set_stroke', () => {
