@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+desktop/tauri.local.conf.json
 
 # Copied from node_modules at build time
 public/canvaskit.wasm

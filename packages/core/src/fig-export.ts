@@ -108,6 +108,9 @@ export async function exportFigFile(
     app: 'OpenPencil',
     createdAt: new Date().toISOString()
   })
+  const imageEntries = Object.fromEntries(
+    [...graph.images.entries()].map(([hash, bytes]) => [`images/${hash}`, [bytes, { level: 0 }] as const])
+  )
 
   if (IS_TAURI) {
     const { invoke } = await import('@tauri-apps/api/core')
@@ -116,7 +119,10 @@ export async function exportFigFile(
         schemaDeflated: Array.from(schemaDeflated),
         kiwiData: Array.from(kiwiData),
         thumbnailPng: Array.from(thumbnailPng),
-        metaJson
+        metaJson,
+        images: Object.fromEntries(
+          [...graph.images.entries()].map(([hash, bytes]) => [hash, Array.from(bytes)])
+        )
       })
     )
   }
@@ -125,6 +131,7 @@ export async function exportFigFile(
   return zipSync({
     'canvas.fig': [canvasData, { level: 0 }],
     'thumbnail.png': [thumbnailPng, { level: 0 }],
-    'meta.json': new TextEncoder().encode(metaJson)
+    'meta.json': new TextEncoder().encode(metaJson),
+    ...imageEntries
   })
 }

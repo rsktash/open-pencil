@@ -1,4 +1,4 @@
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, existsSync } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 
@@ -32,6 +32,19 @@ function findExecutableInPath(fileName, envPath) {
 
 function isTauriDevCommand(args) {
   return args[0] === 'dev'
+}
+
+function hasExplicitConfig(args) {
+  return args.includes('--config') || args.includes('-c')
+}
+
+function withLocalConfig(args) {
+  if (hasExplicitConfig(args)) return args
+
+  const localConfig = path.join(process.cwd(), 'desktop', 'tauri.local.conf.json')
+  if (!existsSync(localConfig)) return args
+
+  return [...args, '--config', localConfig]
 }
 
 function buildEnv(args) {
@@ -71,7 +84,7 @@ if (!isExecutable(tauriBin)) {
   process.exit(1)
 }
 
-const tauriArgs = process.argv.slice(2)
+const tauriArgs = withLocalConfig(process.argv.slice(2))
 const env = buildEnv(tauriArgs)
 const cargoExecutable = findExecutableInPath(
   process.platform === 'win32' ? 'cargo.exe' : 'cargo',

@@ -116,7 +116,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: bunx tauri
-          args: --target ${{ matrix.target }}
+          args: --config desktop/tauri.ci.conf.json --target ${{ matrix.target }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('OpenPencil {0}', github.ref_name) || '' }}
           releaseBody: ${{ steps.release_body.outputs.body || steps.changelog.outputs.release_notes }}

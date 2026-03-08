@@ -257,6 +257,7 @@ fn build_fig_file(
     kiwi_data: Vec<u8>,
     thumbnail_png: Vec<u8>,
     meta_json: String,
+    images: HashMap<String, Vec<u8>>,
 ) -> Result<Vec<u8>, String> {
     use std::io::{Cursor, Write};
 
@@ -285,7 +286,7 @@ fn build_fig_file(
     // Deflate-compress the schema for verification it's already deflated
     // (schema_deflated is already deflated, we just pass it through)
 
-    // Build ZIP with canvas.fig + thumbnail.png + meta.json (all STORED)
+    // Build ZIP with canvas.fig + thumbnail.png + meta.json + image blobs (all STORED)
     let buf = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(buf);
     let options =
@@ -303,6 +304,12 @@ fn build_fig_file(
         .map_err(|e| e.to_string())?;
     zip.write_all(meta_json.as_bytes())
         .map_err(|e| e.to_string())?;
+
+    for (hash, bytes) in images {
+        zip.start_file(format!("images/{hash}"), options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(&bytes).map_err(|e| e.to_string())?;
+    }
 
     let result = zip.finish().map_err(|e| e.to_string())?;
     Ok(result.into_inner())

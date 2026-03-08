@@ -193,6 +193,8 @@ bun run tauri build                    # Production build
 bun run tauri build --target universal-apple-darwin  # macOS universal
 ```
 
+Local builds use [desktop/tauri.conf.json](/Users/rustam/Projects/open-pencil/desktop/tauri.conf.json). If you need machine-specific overrides, create an untracked [desktop/tauri.local.conf.json](/Users/rustam/Projects/open-pencil/desktop/tauri.local.conf.json); `bun run tauri ...` will append it automatically unless you pass `--config` yourself. GitHub builds layer [desktop/tauri.ci.conf.json](/Users/rustam/Projects/open-pencil/desktop/tauri.ci.conf.json) for signing-only settings.
+
 Cross-compilation to other platforms requires their respective toolchains or CI (e.g. GitHub Actions).
 
 ### Platform Prerequisites

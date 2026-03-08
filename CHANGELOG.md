@@ -6,6 +6,10 @@
 
 - MCP live desktop mode — `openpencil-mcp --app desktop` can now proxy tool calls into an already opened OpenPencil desktop app instance through the local automation bridge
 
+### Improvements
+
+- Split local and CI Tauri config — local `bun run tauri ...` now uses the base unsigned config with an optional untracked `desktop/tauri.local.conf.json` override, while GitHub builds layer `desktop/tauri.ci.conf.json` for signing-only settings
+
 ## 0.8.0 — 2026-03-07
 
 ### Features
