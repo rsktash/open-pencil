@@ -50,6 +50,7 @@
 
 ### Fixes
 
+- Fix desktop CLI backend discovery on macOS and Windows app launches — Codex CLI and Claude Code CLI now resolve binaries from common user/Homebrew/npm install paths even when the app PATH is limited
 - Fix AI chat attachment submission — pasted images and attached files now normalize to SDK file parts before send, and Codex CLI temp-directory runs skip the git repo trust check
 - Improve AI chat transcript structure — assistant text is now split around tool activity instead of being merged into one block, and live thinking steps appear inline while the response is still being generated
 - Reduce screenshot attachment overhead — pasted/uploaded images are downscaled and recompressed before send, and restored chat history now stores lightweight attachment placeholders instead of raw base64 image payloads

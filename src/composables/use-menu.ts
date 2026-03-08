@@ -53,7 +53,14 @@ function basename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 }
 
-export async function openRecentFile(path: string) {
+interface OpenRecentFileOptions {
+  forgetOnFailure?: boolean
+}
+
+export async function openRecentFile(
+  path: string,
+  options: OpenRecentFileOptions = {}
+) {
   if (!IS_TAURI) {
     toast.show('Open Recent is only available in the desktop app.', 'error')
     return
@@ -66,8 +73,12 @@ export async function openRecentFile(path: string) {
     await openFileInNewTab(file, undefined, path)
   } catch (error) {
     console.error(`Failed to open recent file: ${path}`, error)
-    forgetRecentFile(path)
-    toast.show(`Couldn't open ${basename(path)}. It was removed from Open Recent.`, 'error')
+    if (options.forgetOnFailure ?? true) {
+      forgetRecentFile(path)
+      toast.show(`Couldn't open ${basename(path)}. It was removed from Open Recent.`, 'error')
+      return
+    }
+    toast.show(`Couldn't open ${basename(path)}.`, 'error')
   }
 }
 

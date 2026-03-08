@@ -128,6 +128,7 @@ export const CHAT_IMAGE_UPLOAD_MAX_BYTES = 450_000
 export const CHAT_IMAGE_UPLOAD_QUALITY = 0.78
 export const RECENT_FILES_STORAGE = 'open-pencil:recent-files'
 export const RECENT_FILES_LIMIT = 10
+export const LAST_OPENED_FILE_STORAGE = 'open-pencil:last-opened-file'
 export const DEFAULT_TEXT_WIDTH = 200
 export const DEFAULT_TEXT_HEIGHT = 24
 export const AUTO_LAYOUT_BREAK_THRESHOLD = 8

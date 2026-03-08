@@ -1,6 +1,6 @@
 import { computed, readonly, shallowRef } from 'vue'
 
-import { RECENT_FILES_LIMIT, RECENT_FILES_STORAGE } from '@/constants'
+import { LAST_OPENED_FILE_STORAGE, RECENT_FILES_LIMIT, RECENT_FILES_STORAGE } from '@/constants'
 
 export interface RecentFileEntry {
   path: string
@@ -113,6 +113,25 @@ function persistRecentFiles(entries: RecentFileEntry[]) {
   storage.setItem(RECENT_FILES_STORAGE, JSON.stringify(entries))
 }
 
+function persistLastOpenedFile(path: string | null) {
+  const storage = getStorage()
+  if (!storage) return
+
+  if (!path) {
+    storage.removeItem(LAST_OPENED_FILE_STORAGE)
+    return
+  }
+
+  storage.setItem(LAST_OPENED_FILE_STORAGE, path)
+}
+
+export function getLastOpenedFile(): string | null {
+  const storage = getStorage()
+  if (!storage) return null
+  const path = storage.getItem(LAST_OPENED_FILE_STORAGE)
+  return path && path.length > 0 ? path : null
+}
+
 function setRecentFiles(entries: RecentFileEntry[]) {
   recentFilesRef.value = entries
   persistRecentFiles(entries)
@@ -120,6 +139,7 @@ function setRecentFiles(entries: RecentFileEntry[]) {
 
 export function rememberRecentFile(path: string, name = basename(path)) {
   if (!path) return
+  persistLastOpenedFile(path)
   setRecentFiles(upsertRecentFile(recentFilesRef.value, path, name))
 }
 
@@ -128,6 +148,7 @@ export function forgetRecentFile(path: string) {
   const nextEntries = removeRecentFile(recentFilesRef.value, path)
   if (nextEntries.length === recentFilesRef.value.length) return
   setRecentFiles(nextEntries)
+  if (getLastOpenedFile() === path) persistLastOpenedFile(null)
 }
 
 const recentFiles = readonly(recentFilesRef)

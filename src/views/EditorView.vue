@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { provide, onMounted, onUnmounted } from 'vue'
+import { nextTick, provide, onMounted, onUnmounted } from 'vue'
 import { useBreakpoints, useEventListener, useUrlSearchParams } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 
+import { IS_TAURI } from '@/constants'
 import { useKeyboard } from '@/composables/use-keyboard'
-import { useMenu } from '@/composables/use-menu'
-import { openRecentFile } from '@/composables/use-menu'
-import { useRecentFiles } from '@/composables/use-recent-files'
+import { useMenu, openRecentFile } from '@/composables/use-menu'
+import { getLastOpenedFile, useRecentFiles } from '@/composables/use-recent-files'
 import { useCollab, COLLAB_KEY } from '@/composables/use-collab'
 import { connectAutomation } from '@/automation/server'
 import { createDemoShapes } from '@/demo'
@@ -70,11 +70,22 @@ onMounted(() => {
 
   if (route.meta.demo) return
 
-  const lastFile = recentFiles.value[0]
-  const isFreshUntitled = firstTab.store.state.documentName === 'Untitled' && !firstTab.store.undo.canUndo
-  if (!lastFile || !isFreshUntitled) return
+  void (async () => {
+    await nextTick()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-  void openRecentFile(lastFile.path)
+    const current = activeTab.value?.store ?? firstTab.store
+    const isFreshUntitled =
+      current.state.documentName === 'Untitled' &&
+      !current.undo.canUndo &&
+      !current.hasUnsavedChanges.value
+    if (!isFreshUntitled) return
+
+    const lastPath = getLastOpenedFile() ?? recentFiles.value[0]?.path
+    if (!lastPath) return
+
+    await openRecentFile(lastPath, { forgetOnFailure: false })
+  })()
 })
 
 onUnmounted(() => {

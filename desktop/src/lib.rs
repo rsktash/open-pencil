@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::HashMap,
+    env,
     fs,
     io::{BufReader, Cursor, Read},
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -23,6 +25,103 @@ const AUTOMATION_HTTP_PORT: u16 = 7600;
 const AUTOMATION_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 const AUTOMATION_BRIDGE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const AUTOMATION_BRIDGE_WAIT_INTERVAL: Duration = Duration::from_millis(100);
+
+fn extra_cli_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")];
+
+    if let Ok(home) = env::var("HOME") {
+        dirs.push(Path::new(&home).join(".bun/bin"));
+        dirs.push(Path::new(&home).join(".local/bin"));
+        dirs.push(Path::new(&home).join(".codex/bin"));
+        dirs.push(Path::new(&home).join(".opencode/bin"));
+        dirs.push(Path::new(&home).join("scoop/shims"));
+    }
+
+    if let Ok(user_profile) = env::var("USERPROFILE") {
+        dirs.push(Path::new(&user_profile).join(".bun\\bin"));
+        dirs.push(Path::new(&user_profile).join("scoop\\shims"));
+    }
+
+    if let Ok(app_data) = env::var("APPDATA") {
+        dirs.push(Path::new(&app_data).join("npm"));
+    }
+
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        dirs.push(Path::new(&local_app_data).join("Microsoft\\WinGet\\Links"));
+        dirs.push(Path::new(&local_app_data).join("Programs\\nodejs"));
+    }
+
+    dirs
+}
+
+#[cfg(windows)]
+fn candidate_executable_paths(dir: &Path, executable: &str) -> Vec<PathBuf> {
+    let path = Path::new(executable);
+    let has_extension = path.extension().is_some();
+    let mut candidates = vec![dir.join(executable)];
+
+    if has_extension {
+        return candidates;
+    }
+
+    let path_ext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    for ext in path_ext.split(';').filter(|ext| !ext.is_empty()) {
+        let normalized = if ext.starts_with('.') {
+            ext.to_string()
+        } else {
+            format!(".{ext}")
+        };
+        candidates.push(dir.join(format!("{executable}{normalized}")));
+        candidates.push(dir.join(format!("{executable}{}", normalized.to_ascii_lowercase())));
+    }
+
+    candidates
+}
+
+#[cfg(not(windows))]
+fn candidate_executable_paths(dir: &Path, executable: &str) -> Vec<PathBuf> {
+    vec![dir.join(executable)]
+}
+
+fn resolve_cli_executable_path(executable: &str, extra_dirs: &[PathBuf]) -> String {
+    if executable.contains(std::path::MAIN_SEPARATOR) || executable.contains('/') {
+        return executable.to_string();
+    }
+
+    if let Some(path_var) = env::var_os("PATH") {
+        for dir in env::split_paths(&path_var) {
+            for candidate in candidate_executable_paths(&dir, executable) {
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
+
+    for dir in extra_dirs {
+        for candidate in candidate_executable_paths(dir, executable) {
+            if candidate.is_file() {
+                return candidate.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    executable.to_string()
+}
+
+fn build_augmented_cli_path(extra_dirs: &[PathBuf]) -> Option<std::ffi::OsString> {
+    let mut paths: Vec<PathBuf> = env::var_os("PATH")
+        .map(|value| env::split_paths(&value).collect())
+        .unwrap_or_default();
+
+    for dir in extra_dirs {
+        if !paths.iter().any(|existing| existing == dir) {
+            paths.push(dir.clone());
+        }
+    }
+
+    env::join_paths(paths).ok()
+}
 
 #[derive(Serialize, Clone)]
 struct FontFamily {
@@ -1025,10 +1124,14 @@ fn build_agent_cli_command(
         _ => "Read REQUEST.md in the current working directory and follow it exactly. Output only the requested JSON.",
     };
 
+    let extra_dirs = extra_cli_search_dirs();
+
     let mut command = match backend {
         "claude-code" => {
-            let executable =
-                std::env::var("OPENPENCIL_CLAUDE_PATH").unwrap_or_else(|_| "claude".to_string());
+            let executable = resolve_cli_executable_path(
+                &std::env::var("OPENPENCIL_CLAUDE_PATH").unwrap_or_else(|_| "claude".to_string()),
+                &extra_dirs,
+            );
             let mut cmd = Command::new(executable);
             cmd.arg("-p");
             if mode == "direct" {
@@ -1048,8 +1151,10 @@ fn build_agent_cli_command(
             cmd
         }
         "codex-cli" => {
-            let executable =
-                std::env::var("OPENPENCIL_CODEX_PATH").unwrap_or_else(|_| "codex".to_string());
+            let executable = resolve_cli_executable_path(
+                &std::env::var("OPENPENCIL_CODEX_PATH").unwrap_or_else(|_| "codex".to_string()),
+                &extra_dirs,
+            );
             let mut cmd = Command::new(executable);
             cmd.arg("exec");
             if resume_session {
@@ -1068,6 +1173,9 @@ fn build_agent_cli_command(
     };
 
     command.env("NO_COLOR", "1");
+    if let Some(path) = build_augmented_cli_path(&extra_dirs) {
+        command.env("PATH", path);
+    }
     if let Some(token) = automation_token {
         command.env(
             "OPENPENCIL_AUTOMATION_URL",
