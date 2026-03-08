@@ -7,6 +7,7 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY ?? ''
 const CHAT_CLI_SESSION_STORAGE = 'open-pencil:chat-cli-session'
 const CHAT_MESSAGE_HISTORY_STORAGE = 'open-pencil:chat-history'
 const CHAT_PROMPT_HISTORY_STORAGE = 'open-pencil:chat-prompt-history'
+const CHAT_SUBAGENT_COUNT_STORAGE = 'open-pencil:chat-subagent-count'
 
 let page: Page
 let canvas: CanvasHelper
@@ -421,6 +422,34 @@ test('desktop cli models are grouped and selectable', async () => {
   await page.getByRole('option', { name: /Opus 4\.6/i }).click()
   await expect(page.getByRole('combobox')).toContainText('Claude Code CLI')
   await expect(page.getByRole('combobox')).toContainText('Opus 4.6')
+})
+
+test('subagent selector is shown for local CLI models and persists the selected count', async () => {
+  await page.evaluate((storageKey) => localStorage.removeItem(storageKey), CHAT_SUBAGENT_COUNT_STORAGE)
+  await page.reload()
+  await canvas.waitForInit()
+  await injectMockTransport(page)
+  await chatTab().click()
+
+  await expect(page.locator('[data-test-id="chat-subagent-selector"]')).toHaveCount(0)
+
+  await page.locator('[data-test-id="chat-model-selector"]').click()
+  await page.getByRole('option', { name: /GPT 5\.4/i }).click()
+
+  const subagentSelector = page.locator('[data-test-id="chat-subagent-selector"]')
+  await expect(subagentSelector).toBeVisible()
+  await expect(subagentSelector).toContainText('1x')
+
+  await subagentSelector.click()
+  await page.getByRole('option', { name: /^3x$/ }).click()
+  await expect(subagentSelector).toContainText('3x')
+
+  await page.reload()
+  await canvas.waitForInit()
+  await injectMockTransport(page)
+  await chatTab().click()
+
+  await expect(page.locator('[data-test-id="chat-subagent-selector"]')).toContainText('3x')
 })
 
 test('restored CLI sessions filter models until a new session is started', async () => {

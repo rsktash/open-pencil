@@ -22,6 +22,7 @@ declare module 'vue' {
     ChatMessage: typeof import('./src/components/chat/ChatMessage.vue')['default']
     ChatModelSelector: typeof import('./src/components/chat/ChatModelSelector.vue')['default']
     ChatPanel: typeof import('./src/components/ChatPanel.vue')['default']
+    ChatSubagentSelector: typeof import('./src/components/chat/ChatSubagentSelector.vue')['default']
     CodePanel: typeof import('./src/components/CodePanel.vue')['default']
     CollabPanel: typeof import('./src/components/CollabPanel.vue')['default']
     ColorInput: typeof import('./src/components/ColorInput.vue')['default']

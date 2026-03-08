@@ -9,6 +9,9 @@ import { createCliAgentTransport } from '@/ai/cli-agent'
 import { createAITools } from '@/ai/tools'
 import {
   CHAT_CLI_SESSION_STORAGE,
+  CHAT_SUBAGENT_COUNT_MAX,
+  CHAT_SUBAGENT_COUNT_MIN,
+  CHAT_SUBAGENT_COUNT_STORAGE,
   CHAT_MESSAGE_HISTORY_STORAGE,
   IS_TAURI
 } from '@/constants'
@@ -125,6 +128,19 @@ function isStoredRole(value: unknown): value is UIMessage['role'] {
 
 function isLocalCliBackend(value: unknown): value is LocalCliBackend {
   return value === 'claude-code' || value === 'codex-cli'
+}
+
+function normalizeStoredSubagentCount(value: unknown): string {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number.parseInt(value, 10)
+        : Number.NaN
+
+  if (!Number.isFinite(numeric)) return String(CHAT_SUBAGENT_COUNT_MIN)
+  const clamped = Math.max(CHAT_SUBAGENT_COUNT_MIN, Math.min(CHAT_SUBAGENT_COUNT_MAX, numeric))
+  return String(clamped)
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -382,6 +398,7 @@ const FALLBACK_MODEL = ALL_MODELS.find((model) => model.id === DEFAULT_AI_MODEL)
 const openrouterApiKey = ref(getStoredValue(API_KEY_STORAGE.openrouter))
 const openaiApiKey = ref(getStoredValue(API_KEY_STORAGE.openai))
 const modelId = ref(normalizeModelId(getStoredValue(MODEL_STORAGE) || DEFAULT_AI_MODEL))
+const subagentCount = ref(normalizeStoredSubagentCount(getStoredValue(CHAT_SUBAGENT_COUNT_STORAGE)))
 const activeTab = ref<'design' | 'code' | 'ai'>('design')
 let persistedMessages: UIMessage[] = readStoredMessages()
 const activeCliSession = ref<CliSessionState | null>(IS_TAURI ? readStoredCliSession() : null)
@@ -425,6 +442,15 @@ watch(openaiApiKey, (key) => {
 
 watch(modelId, (id) => {
   setStoredValue(MODEL_STORAGE, id)
+})
+
+watch(subagentCount, (count) => {
+  const normalized = normalizeStoredSubagentCount(count)
+  if (normalized !== count) {
+    subagentCount.value = normalized
+    return
+  }
+  setStoredValue(CHAT_SUBAGENT_COUNT_STORAGE, normalized)
 })
 
 watch(
@@ -488,6 +514,9 @@ function createTransport() {
         }
         activeCliSession.value = nextSession
         return { session: nextSession, isNew: true }
+      },
+      getSubagentCount() {
+        return Number.parseInt(subagentCount.value, 10) || CHAT_SUBAGENT_COUNT_MIN
       }
     })
   }
@@ -602,6 +631,7 @@ export function useAIChat() {
     backendInfo,
     chat,
     modelId,
+    subagentCount,
     selectedModel,
     activeTab,
     isConfigured,

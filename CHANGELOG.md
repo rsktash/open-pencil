@@ -9,6 +9,7 @@
 
 ### Improvements
 
+- AI chat subagent budget selector — local CLI backends now expose a persisted `1x` to `5x` execution budget in the chat footer, with higher counts switching the CLI prompt into coordinator-plus-workers task decomposition mode
 - Split local and CI Tauri config — local `bun run tauri ...` now uses the base unsigned config with an optional untracked `desktop/tauri.local.conf.json` override, while GitHub builds layer `desktop/tauri.ci.conf.json` for signing-only settings
 - Dirty document close guard — closing a tab or app window with unsaved `.fig` changes now asks whether to save, discard, or cancel before the document is closed
 - Desktop startup restore — the app now reopens the most recently used `.fig` file on launch when starting into a fresh untitled tab

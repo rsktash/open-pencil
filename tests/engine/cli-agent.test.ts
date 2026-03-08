@@ -1,12 +1,28 @@
 import { describe, expect, test } from 'bun:test'
+import { SceneGraph } from '@open-pencil/core'
 
-import { createCliStructuredOutputParser } from '../../src/ai/cli-agent'
+import { buildDirectPrompt, createCliStructuredOutputParser } from '../../src/ai/cli-agent'
+
+import type { UIMessage } from 'ai'
+import type { EditorStore } from '../../src/stores/editor'
+
+function makePromptTestStore(): EditorStore {
+  const graph = new SceneGraph()
+  return {
+    graph,
+    state: {
+      currentPageId: graph.getPages()[0].id,
+      selectedIds: new Set<string>()
+    }
+  } as unknown as EditorStore
+}
 
 describe('CLI structured output parser', () => {
   test('parses Codex JSONL progress items and final assistant text', () => {
     const deltas: string[] = []
     const reasoningStarts: Array<{ id: string; text?: string }> = []
     const reasoningDeltas: Array<{ id: string; delta: string }> = []
+    const reasoningReplacements: Array<{ id: string; text: string }> = []
     const reasoningEnds: Array<{ id: string }> = []
     const started: Array<{ toolCallId: string; toolName: string; input?: unknown }> = []
     const completed: Array<{ toolCallId: string; toolName: string; output?: unknown; errorText?: string }> = []
@@ -20,6 +36,9 @@ describe('CLI structured output parser', () => {
       },
       onReasoningDelta(entry) {
         reasoningDeltas.push(entry)
+      },
+      onReasoningReplace(entry) {
+        reasoningReplacements.push(entry)
       },
       onReasoningEnd(entry) {
         reasoningEnds.push(entry)
@@ -76,10 +95,11 @@ describe('CLI structured output parser', () => {
         text: 'Plan the implementation'
       }
     ])
-    expect(reasoningDeltas).toEqual([
+    expect(reasoningDeltas).toEqual([])
+    expect(reasoningReplacements).toEqual([
       {
         id: 'reason-1',
-        delta: 'ned the implementation'
+        text: 'Planned the implementation'
       }
     ])
     expect(reasoningEnds).toEqual([
@@ -192,5 +212,37 @@ describe('CLI structured output parser', () => {
 
     expect(deltas).toEqual(['Thinking', ' through the layout'])
     expect(parser.state.finalAssistantText).toBe('Thinking through the layout')
+  })
+})
+
+describe('CLI direct prompt builder', () => {
+  const messages: UIMessage[] = [
+    {
+      id: 'user-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Fix the negotiation page layout.' }]
+    }
+  ]
+
+  test('uses single-agent instructions at 1x', () => {
+    const prompt = buildDirectPrompt(makePromptTestStore(), messages, [], {
+      resumeSession: false,
+      subagentCount: 1
+    })
+
+    expect(prompt).toContain('Work as a single agent.')
+    expect(prompt).toContain('Do not attempt delegation or subagent coordination for this turn.')
+    expect(prompt).not.toContain('You have a budget of 3 agents total')
+  })
+
+  test('uses coordinator instructions above 1x', () => {
+    const prompt = buildDirectPrompt(makePromptTestStore(), messages, [], {
+      resumeSession: true,
+      subagentCount: 4
+    })
+
+    expect(prompt).toContain('You have a budget of 4 agents total, including yourself.')
+    expect(prompt).toContain('use up to 3 worker agents')
+    expect(prompt).toContain('This is a continuation of an existing native CLI session.')
   })
 })

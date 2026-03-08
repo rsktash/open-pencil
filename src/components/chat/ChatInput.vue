@@ -10,6 +10,7 @@ import {
   normalizeIncomingAttachmentFile
 } from '@/components/chat/attachment-utils'
 import ChatModelSelector from '@/components/chat/ChatModelSelector.vue'
+import ChatSubagentSelector from '@/components/chat/ChatSubagentSelector.vue'
 import { uiButton } from '@/components/ui/button'
 import { CHAT_PROMPT_HISTORY_LIMIT, CHAT_PROMPT_HISTORY_STORAGE } from '@/constants'
 
@@ -266,7 +267,10 @@ defineExpose({
       @drop="handleDrop"
     >
       <div class="mb-1.5 flex items-center justify-between gap-2">
-        <ChatModelSelector />
+        <div class="flex min-w-0 items-center gap-1">
+          <ChatModelSelector />
+          <ChatSubagentSelector />
+        </div>
         <button
           type="button"
           data-test-id="chat-attach-button"

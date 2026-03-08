@@ -71,6 +71,7 @@ interface CliSessionManager {
     session: CliSessionState
     isNew: boolean
   }
+  getSubagentCount: () => number
 }
 
 interface CliStructuredToolStart {
@@ -225,14 +226,17 @@ function getLatestUserRequest(messages: UIMessage[]): string {
   return text || 'The request is conveyed only through the attached files for this turn.'
 }
 
-function buildDirectPrompt(
+export function buildDirectPrompt(
   store: EditorStore,
   messages: UIMessage[],
   attachments: CliAttachmentPayload[],
   options: {
     resumeSession: boolean
+    subagentCount: number
   }
 ): string {
+  const useSubagents = options.subagentCount > 1
+  const workerBudget = Math.max(0, options.subagentCount - 1)
   const sessionInstructions = options.resumeSession
     ? dedent`
         Session mode:
@@ -244,6 +248,23 @@ function buildDirectPrompt(
         Session mode:
         - This is the first turn of a new native CLI session.
         - Use the conversation summary below to seed the initial context for this session.
+      `
+
+  const subagentInstructions = useSubagents
+    ? dedent`
+        Execution mode:
+        - You have a budget of ${options.subagentCount} agents total, including yourself.
+        - You are the lead coordinator. Start by analyzing the request and decomposing it into concrete sub-tasks.
+        - If your backend supports native subagents or parallel delegation, use up to ${workerBudget} worker agents when the work is independent enough to benefit from parallel execution.
+        - Reserve the main thread for planning, conflict resolution, verification, and synthesis.
+        - Delegate only bounded sub-tasks. Do not fragment tightly coupled edits or duplicate work across workers.
+        - After worker results come back, reconcile them against the live OpenPencil document, verify the final state, and then respond to the user.
+        - If native subagents are unavailable, still follow the same coordinator-first plan yourself and execute the sub-tasks sequentially without dropping the decomposition discipline.
+      `
+    : dedent`
+        Execution mode:
+        - Work as a single agent.
+        - Do not attempt delegation or subagent coordination for this turn.
       `
 
   return dedent`
@@ -268,6 +289,8 @@ function buildDirectPrompt(
     - Use screenshots for visual verification and structural tools for the actual edits.
 
     ${sessionInstructions}
+
+    ${subagentInstructions}
 
     Canvas context:
     ${buildCanvasContext(store)}
@@ -1093,7 +1116,8 @@ export function createCliAgentTransport(
             const attachments = await collectLatestAttachments(messages)
             const { session, isNew } = sessionManager.getOrCreateSession()
             const prompt = buildDirectPrompt(store, messages, attachments, {
-              resumeSession: !isNew
+              resumeSession: !isNew,
+              subagentCount: sessionManager.getSubagentCount()
             })
             const cliResponse = await invokeCliBackend(
               model,
