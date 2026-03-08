@@ -107,7 +107,9 @@ Core extraction, CLI, MCP server, AI tools, eval command.
 - jscpd copy-paste detection (15.6% → 0.62%), kiwi-serialize.ts consolidation
 - .fig roundtrip tests with LFS fixtures (material3.fig 87K nodes, nuxtui.fig 314K nodes)
 - .fig import O(n²) → O(n) fix (37s → 535ms on 87K nodes), ByteBuffer optimization
-- AI chat: OpenRouter direct (no backend), Stronghold key storage, 87 tools split across domain files in `tools/`, model selector, ⌘J toggle, streaming markdown, Playwright tests with mock transport
+- test:coverage script
+- AI chat: direct provider transport (OpenRouter + OpenAI Codex, no backend), Stronghold/local API key storage, 87 tools split across domain files in `packages/core/src/tools/`, model selector, ⌘J toggle, streaming markdown, and Playwright tests with mock transport
+- Experimental desktop Claude Code/Codex CLI sessions with file attachments, pasted images, bridge-backed tool access, real-time response/tool streaming, JSX render support from a source workspace, and stop/cancel support
 - 49 additional AI/MCP tools ported from figma-use (87 total): granular set tools, node operations, variable CRUD, boolean operations, vector path tools, viewport control
 - MCP server (@open-pencil/mcp): stdio + HTTP (Hono + Streamable HTTP with sessions), 87 core tools + 3 file management tools (90 total), runs on Bun and Node.js
 - Unified tool definitions: define once in `packages/core/src/tools/` (split by domain), adapt for AI chat (valibot), MCP (zod), CLI (eval)

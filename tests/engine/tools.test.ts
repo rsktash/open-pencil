@@ -25,7 +25,7 @@ describe('tool definitions', () => {
 
   test('required params are marked', () => {
     for (const t of ALL_TOOLS) {
-      for (const [key, param] of Object.entries(t.params)) {
+      for (const [, param] of Object.entries(t.params)) {
         expect(typeof param.type).toBe('string')
         expect(typeof param.description).toBe('string')
       }
@@ -101,6 +101,36 @@ describe('set_fill', () => {
     const tool = ALL_TOOLS.find((t) => t.name === 'set_fill')!
     const result = tool.execute(figma, { id: 'nonexistent', color: '#ff0000' }) as any
     expect(result.error).toContain('not found')
+  })
+})
+
+describe('take_screenshot', () => {
+  test('captures the current selection with image export metadata', async () => {
+    const { figma } = setup()
+    const rect = figma.createRectangle()
+    rect.resize(120, 90)
+    figma.currentPage.selection = [rect]
+
+    ;(
+      figma as FigmaAPI & {
+        exportImage?: (nodeIds: string[], opts: { scale?: number; format?: string }) => Promise<Uint8Array>
+      }
+    ).exportImage = async (nodeIds, opts) => {
+      expect(nodeIds).toEqual([rect.id])
+      expect(opts.format).toBe('PNG')
+      return new Uint8Array([137, 80, 78, 71])
+    }
+
+    const tool = ALL_TOOLS.find((t) => t.name === 'take_screenshot')!
+    const result = (await tool.execute(figma, { target: 'SELECTION' })) as any
+
+    expect(result.target).toBe('SELECTION')
+    expect(result.highlightIds).toEqual([rect.id])
+    expect(result.captureHighlight).toEqual({
+      rects: [{ x: 0, y: 0, width: 120, height: 90 }]
+    })
+    expect(result.mimeType).toBe('image/png')
+    expect(result.byteLength).toBe(4)
   })
 })
 

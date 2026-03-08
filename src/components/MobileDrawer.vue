@@ -190,7 +190,7 @@ const drawerTransition = {
 
         <TabsContent value="ai" class="mt-0 h-full data-[state=inactive]:hidden">
           <div data-test-id="mobile-drawer-ai" class="flex h-full flex-col">
-            <ChatPanel />
+            <ChatPanel :active="getDrawerTab() === 'ai'" />
           </div>
         </TabsContent>
       </div>

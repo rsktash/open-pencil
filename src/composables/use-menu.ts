@@ -1,6 +1,8 @@
-import { onUnmounted } from 'vue'
+import { onUnmounted, watch } from 'vue'
 
 import { IS_TAURI } from '@/constants'
+import { forgetRecentFile, useRecentFiles } from '@/composables/use-recent-files'
+import { toast } from '@/composables/use-toast'
 import { useEditorStore } from '@/stores/editor'
 import { openFileInNewTab, createTab, closeTab, activeTab } from '@/stores/tabs'
 
@@ -14,7 +16,7 @@ export async function openFileDialog() {
     })
     if (!path) return
     const bytes = await readFile(path as string)
-    const file = new File([bytes], (path as string).split('/').pop() ?? 'file.fig')
+    const file = new File([bytes], basename(path as string))
     await openFileInNewTab(file, undefined, path as string)
     return
   }
@@ -47,7 +49,37 @@ export async function openFileDialog() {
   input.click()
 }
 
+function basename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
+export async function openRecentFile(path: string) {
+  if (!IS_TAURI) {
+    toast.show('Open Recent is only available in the desktop app.', 'error')
+    return
+  }
+
+  try {
+    const { readFile } = await import('@tauri-apps/plugin-fs')
+    const bytes = await readFile(path)
+    const file = new File([bytes], basename(path), { type: 'application/octet-stream' })
+    await openFileInNewTab(file, undefined, path)
+  } catch (error) {
+    console.error(`Failed to open recent file: ${path}`, error)
+    forgetRecentFile(path)
+    toast.show(`Couldn't open ${basename(path)}. It was removed from Open Recent.`, 'error')
+  }
+}
+
+export async function openRecentFileByIndex(index: number) {
+  const { recentFiles } = useRecentFiles()
+  const entry = recentFiles.value[index]
+  if (!entry) return
+  await openRecentFile(entry.path)
+}
+
 const store = useEditorStore()
+const { recentFileMenuEntries } = useRecentFiles()
 
 const MENU_ACTIONS: Record<string, () => void> = {
   new: () => createTab(),
@@ -70,19 +102,55 @@ const MENU_ACTIONS: Record<string, () => void> = {
   }
 }
 
+function resolveMenuAction(id: string): (() => void) | undefined {
+  const action = MENU_ACTIONS[id]
+  if (action) return action
+
+  if (!id.startsWith('open-recent-')) return undefined
+
+  const index = Number.parseInt(id.slice('open-recent-'.length), 10)
+  if (Number.isNaN(index) || index < 0) return undefined
+
+  return () => {
+    void openRecentFileByIndex(index)
+  }
+}
+
 export function useMenu() {
   if (!IS_TAURI) return
 
   let unlisten: (() => void) | undefined
+  let stopRecentMenuWatch: (() => void) | undefined
 
   import('@tauri-apps/api/event').then(({ listen }) => {
     listen<string>('menu-event', (event) => {
-      const action = MENU_ACTIONS[event.payload]
+      const action = resolveMenuAction(event.payload)
       if (action) action()
     }).then((fn) => {
       unlisten = fn
     })
   })
 
-  onUnmounted(() => unlisten?.())
+  void import('@tauri-apps/api/core').then(({ invoke }) => {
+    const syncRecentFilesMenu = async () => {
+      await invoke('set_recent_files_menu', {
+        items: recentFileMenuEntries.value.map(({ label }) => ({ label }))
+      }).catch((error) => {
+        console.error('Failed to sync Open Recent menu:', error)
+      })
+    }
+
+    stopRecentMenuWatch = watch(
+      () => recentFileMenuEntries.value.map(({ label }) => label),
+      () => {
+        void syncRecentFilesMenu()
+      },
+      { immediate: true }
+    )
+  })
+
+  onUnmounted(() => {
+    unlisten?.()
+    stopRecentMenuWatch?.()
+  })
 }

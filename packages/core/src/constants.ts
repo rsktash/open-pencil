@@ -82,55 +82,153 @@ export const FLASH_STROKE_WIDTH = 2
 export const FLASH_PADDING = 5
 export const FLASH_OVERSHOOT = 30
 export const FLASH_RADIUS = 4
+export const FLASH_FILL_ALPHA = 0.08
+export const FLASH_SWEEP_ALPHA = 0.18
+export const FLASH_SWEEP_WIDTH = 42
+export const CAPTURE_HIGHLIGHT_DURATION_MS = 1100
+export const CAPTURE_HIGHLIGHT_STROKE_WIDTH = 2
+export const CAPTURE_HIGHLIGHT_PADDING = 10
+export const CAPTURE_HIGHLIGHT_RADIUS = 8
+export const CAPTURE_HIGHLIGHT_FILL_ALPHA = 0.06
+export const CAPTURE_HIGHLIGHT_SWEEP_ALPHA = 0.24
+export const CAPTURE_HIGHLIGHT_SWEEP_WIDTH = 56
 
 export const TEXT_SELECTION_COLOR = { r: 0.26, g: 0.52, b: 0.96, a: 0.3 }
 export const TEXT_CARET_COLOR = BLACK
 export const TEXT_CARET_WIDTH = 1
 
+export type AIBackendId = 'openrouter' | 'openai' | 'claude-code' | 'codex-cli'
+
 export interface ModelOption {
   id: string
   name: string
   provider: string
+  backend: AIBackendId
+  model: string
   tag?: string
 }
 
 export const AI_MODELS: ModelOption[] = [
   // Best for design: vision + frontend + tool calling (WebDev Arena #1, DesignBench, SWE-bench 79.6%)
   {
-    id: 'anthropic/claude-sonnet-4.6',
+    id: 'openrouter::anthropic/claude-sonnet-4.6',
     name: 'Claude Sonnet 4.6',
     provider: 'Anthropic',
+    backend: 'openrouter',
+    model: 'anthropic/claude-sonnet-4.6',
     tag: 'Best for design'
   },
   {
-    id: 'anthropic/claude-opus-4.6',
+    id: 'openrouter::anthropic/claude-opus-4.6',
     name: 'Claude Opus 4.6',
     provider: 'Anthropic',
+    backend: 'openrouter',
+    model: 'anthropic/claude-opus-4.6',
     tag: 'Smartest'
   },
   // 76.8% SWE-bench, vision + UI-to-code specialist
-  { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5', provider: 'Moonshot', tag: 'Vision + code' },
+  {
+    id: 'openrouter::moonshotai/kimi-k2.5',
+    name: 'Kimi K2.5',
+    provider: 'Moonshot',
+    backend: 'openrouter',
+    model: 'moonshotai/kimi-k2.5',
+    tag: 'Vision + code'
+  },
   // 1M context, multimodal (text+image+audio+video), 78% SWE-bench
   {
-    id: 'google/gemini-3.1-pro-preview',
+    id: 'openrouter::google/gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro',
     provider: 'Google',
+    backend: 'openrouter',
+    model: 'google/gemini-3.1-pro-preview',
     tag: '1M context'
   },
-  // 80% SWE-bench, 400K context, agentic coding
-  { id: 'openai/gpt-5.3-codex', name: 'GPT-5.3 Codex', provider: 'OpenAI' },
+  // Direct Codex API access without routing through OpenRouter
+  {
+    id: 'openai::gpt-5.3-codex',
+    name: 'GPT-5.3 Codex',
+    provider: 'OpenAI',
+    backend: 'openai',
+    model: 'gpt-5.3-codex',
+    tag: 'Direct'
+  },
+  {
+    id: 'codex-cli::gpt-5.4',
+    name: 'GPT 5.4',
+    provider: 'OpenAI',
+    backend: 'codex-cli',
+    model: 'gpt-5.4'
+  },
+  {
+    id: 'codex-cli::gpt-5.3-codex',
+    name: 'CODEX 5.3',
+    provider: 'OpenAI',
+    backend: 'codex-cli',
+    model: 'gpt-5.3-codex'
+  },
+  {
+    id: 'claude-code::claude-sonnet-4-6',
+    name: 'Sonnet 4.6',
+    provider: 'Anthropic',
+    backend: 'claude-code',
+    model: 'claude-sonnet-4-6'
+  },
+  {
+    id: 'claude-code::claude-opus-4-6',
+    name: 'Opus 4.6',
+    provider: 'Anthropic',
+    backend: 'claude-code',
+    model: 'claude-opus-4-6'
+  },
 
   // Fast & cheap
-  { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash', provider: 'Google', tag: 'Fast' },
-  { id: 'deepseek/deepseek-v3.2', name: 'DeepSeek V3.2', provider: 'DeepSeek', tag: 'Cheap' },
-  { id: 'qwen/qwen3.5-flash-02-23', name: 'Qwen 3.5 Flash', provider: 'Qwen', tag: 'Cheap' },
+  {
+    id: 'openrouter::google/gemini-3-flash-preview',
+    name: 'Gemini 3 Flash',
+    provider: 'Google',
+    backend: 'openrouter',
+    model: 'google/gemini-3-flash-preview',
+    tag: 'Fast'
+  },
+  {
+    id: 'openrouter::deepseek/deepseek-v3.2',
+    name: 'DeepSeek V3.2',
+    provider: 'DeepSeek',
+    backend: 'openrouter',
+    model: 'deepseek/deepseek-v3.2',
+    tag: 'Cheap'
+  },
+  {
+    id: 'openrouter::qwen/qwen3.5-flash-02-23',
+    name: 'Qwen 3.5 Flash',
+    provider: 'Qwen',
+    backend: 'openrouter',
+    model: 'qwen/qwen3.5-flash-02-23',
+    tag: 'Cheap'
+  },
 
   // Free (with tool calling)
-  { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder', provider: 'Qwen', tag: 'Free' },
-  { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', provider: 'OpenAI', tag: 'Free' }
+  {
+    id: 'openrouter::qwen/qwen3-coder:free',
+    name: 'Qwen3 Coder',
+    provider: 'Qwen',
+    backend: 'openrouter',
+    model: 'qwen/qwen3-coder:free',
+    tag: 'Free'
+  },
+  {
+    id: 'openrouter::openai/gpt-oss-120b:free',
+    name: 'GPT-OSS 120B',
+    provider: 'OpenAI',
+    backend: 'openrouter',
+    model: 'openai/gpt-oss-120b:free',
+    tag: 'Free'
+  }
 ]
 
-export const DEFAULT_AI_MODEL = AI_MODELS[0].id
+export const DEFAULT_AI_MODEL =
+  AI_MODELS.find((model) => model.backend === 'openrouter')?.id ?? AI_MODELS[0].id
 
 export const AUTOMATION_HTTP_PORT = 7600
 export const AUTOMATION_WS_PORT = 7601

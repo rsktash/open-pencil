@@ -31,7 +31,7 @@ describe('AI adapter', () => {
 
   test('each tool has description and execute', () => {
     const { tools } = setup()
-    for (const [name, t] of Object.entries(tools)) {
+    for (const [, t] of Object.entries(tools)) {
       const aiTool = t as { description: string; execute: Function }
       expect(aiTool.description).toBeTruthy()
       expect(typeof aiTool.execute).toBe('function')
@@ -186,5 +186,44 @@ describe('AI adapter', () => {
     const getNode = tools.get_node as { execute: Function }
     const result = (await getNode.execute({ id })) as any
     expect(result.error).toContain('not found')
+  })
+
+  test('take_screenshot highlights capture targets without mutating', async () => {
+    const graph = new SceneGraph()
+    const figma = new FigmaAPI(graph) as FigmaAPI & {
+      exportImage?: (nodeIds: string[], opts: { scale?: number; format?: string }) => Promise<Uint8Array>
+    }
+    const flashed: string[][] = []
+    const captures: Array<{ rects: Array<{ x: number; y: number; width: number; height: number }> }> = []
+    const rect = figma.createRectangle()
+    rect.resize(120, 80)
+
+    figma.exportImage = async (nodeIds) => {
+      expect(nodeIds).toEqual([rect.id])
+      return new Uint8Array([1, 2, 3, 4])
+    }
+
+    const tools = toolsToAI(
+      ALL_TOOLS,
+      {
+        getFigma: () => figma,
+        onAfterExecute: () => {},
+        onCaptureHighlight: (highlight) => {
+          captures.push(highlight as { rects: Array<{ x: number; y: number; width: number; height: number }> })
+        },
+        onFlashNodes: (ids) => {
+          flashed.push(ids)
+        }
+      },
+      { v, valibotSchema, tool }
+    )
+
+    const takeScreenshot = tools.take_screenshot as { execute: Function }
+    const result = (await takeScreenshot.execute({ ids: [rect.id] })) as any
+
+    expect(result.mimeType).toBe('image/png')
+    expect(result.highlightIds).toEqual([rect.id])
+    expect(captures).toEqual([{ rects: [{ x: 0, y: 0, width: 120, height: 80 }] }])
+    expect(flashed).toEqual([])
   })
 })

@@ -43,9 +43,10 @@ Your design files are yours. Your tools should be too.
 - **Copy & paste with Figma** — select nodes in Figma, paste into OpenPencil (and vice versa). Uses the same Kiwi binary format as .fig files
 - **Real-time collaboration** — P2P via WebRTC, no server required. Cursors, presence, follow mode
 - **Drawing tools** — shapes, pen tool with vector networks, rich text with system fonts, auto-layout, components with live sync, variables with modes and collections
-- **AI chat** — describe what you want, the AI builds it. 87 tools wired to chat, CLI, and MCP
+- **AI chat** — describe what you want, paste images, attach files, and let the built-in agent build it. Chat history is restored locally, submitted prompts can be recalled with ↑/↓, and 87 tools are wired to chat, CLI, and MCP. Supports curated OpenRouter models, direct OpenAI Codex, and experimental desktop Claude Code/Codex CLI backends with native session continuation, bridge-backed tool access, real-time response/tool streaming, JSX render support from a source workspace, and stop/cancel support
 - **MCP server** — connect Claude Code, Cursor, or any MCP client to read/write .fig files headlessly
 - **Headless CLI** — inspect, search, analyze, and render .fig files without a GUI. Run against live app via RPC bridge or standalone against .fig files
+- **Desktop-native file workflow** — File menu includes Open Recent backed by a local recent-files list for `.fig` documents
 - **Tailwind CSS export** — export selections as HTML with Tailwind v4 utility classes from the Code panel, CLI, or programmatically
 - **Mobile & PWA** — responsive editor with touch-optimized toolbar, swipeable drawer, installable as a Progressive Web App
 - **Documentation** — full docs at [openpencil.dev](https://openpencil.dev) with 6 locales

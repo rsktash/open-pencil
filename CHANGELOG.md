@@ -5,8 +5,12 @@
 ### Features
 
 - Mobile layout & PWA — responsive editor with touch-optimized toolbar, swipeable bottom drawer (layers/properties/design/code), HUD overlay, and installable PWA with icons and service worker
+- AI screenshot capture — new `take_screenshot` tool lets the built-in agent capture the current page, selection, or explicit nodes for visual comparison against reference attachments, with a screenshot-style shimmer highlight in the editor during capture
 - Tailwind CSS v4 JSX export — export selections as HTML with Tailwind utility classes (`<div className="flex gap-4 p-3">`) from the Code panel, CLI (`bun open-pencil export --format jsx --style tailwind`), or programmatically via `sceneNodeToJSX(id, graph, 'tailwind')`. Supports layout, sizing, colors, border radius, opacity, rotation, overflow, shadows, blur, and typography. Uses v4 spacing semantics (px/4 multiplier) with automatic fallback to arbitrary values.
 - Code panel format toggle — switch between OpenPencil (custom components) and Tailwind (HTML + utility classes) output
+- AI chat attachments — attach local files in the composer and paste clipboard images directly into the built-in chat for multimodal prompts
+- Direct OpenAI Codex backend — the built-in chat now supports provider-aware model routing, with curated OpenRouter models plus direct OpenAI Codex selection
+- Desktop CLI backends — experimental Claude Code CLI and Codex CLI sessions can now drive the built-in chat through desktop bridge-backed OpenPencil tool calls, including real-time response/tool streaming, JSX `render` via a staged helper script, and stop/cancel support
 - Homebrew tap — `brew install open-pencil/tap/open-pencil` for macOS (arm64 + x64), auto-updated on each release
 - Double-click to rename layers — inline rename in layer panel, shared `useInlineRename` composable
 - New AI/MCP tools: `analyze_colors`, `analyze_typography`, `analyze_spacing`, `analyze_clusters`, `diff_create`, `diff_show`, `get_components`, `get_current_page`, `arrange`, `node_to_component`
@@ -15,7 +19,13 @@
 
 ### Improvements
 
+- File menu now includes Open Recent on desktop, backed by a persisted local list of recently opened or saved `.fig` files
 - Refactor mobile drawer tabs, layout sizing dropdowns, and inline rename to use Reka UI primitives
+- AI model selector groups models by integration (Codex CLI, Claude Code CLI, OpenAI, Open Router) and exposes per-CLI model variants
+- AI chat prompt history — submitted prompts are stored locally and can be recalled in the composer with ↑/↓
+- AI chat history restore — prior conversations are restored locally when reopening the app or reloading the editor
+- AI chat drag-and-drop — files can now be dropped directly onto the composer to attach them to the next prompt, with a visible drop target state
+- Native CLI session continuity — Claude Code CLI and Codex CLI now continue their own session history between turns, lock the model picker to the active CLI backend on restore, and expose a New session reset in the chat UI
 - Add shared UI style helpers with tailwind-variants for menus, selects, buttons, and surfaces
 - Unified tool definitions — define once in `packages/core/src/tools/`, automatically available in AI chat, CLI, and MCP
 - Harden FigmaAPI — hide internals via Symbols, freeze arrays, fix `layoutSizing`, 30+ new properties and methods
@@ -28,6 +38,14 @@
 
 ### Fixes
 
+- Fix AI chat attachment submission — pasted images and attached files now normalize to SDK file parts before send, and Codex CLI temp-directory runs skip the git repo trust check
+- Improve AI chat transcript structure — assistant text is now split around tool activity instead of being merged into one block, and live thinking steps appear inline while the response is still being generated
+- Reduce screenshot attachment overhead — pasted/uploaded images are downscaled and recompressed before send, and restored chat history now stores lightweight attachment placeholders instead of raw base64 image payloads
+- Fix restored CLI chat sessions on first open/reply — stored chat history is now normalized on load, chat initialization is deferred until the AI panel is actually opened, and assistant transcript text renders without the unstable markdown parser that was causing runtime toasts on restore
+- Fix desktop CLI chat progress — Codex now runs with bridge-capable local access, Claude/Codex use structured streaming for partial assistant output, and the chat no longer replays internal CLI shell steps as user-facing tool calls
+- Fix Codex progress parsing — the chat now accepts current Codex JSONL `item_type` / `assistant_message` event variants so interim technical status text does not disappear from the transcript
+- Fix desktop automation bridge ownership in Tauri dev — the Vite dev server now skips its local bridge when launched via `bun run tauri dev`, avoiding the `127.0.0.1:7600` port collision and false “OpenPencil app is not connected” tool failures
+- Fix desktop Open Recent watcher errors — reopened files now continue loading even if filesystem watch setup fails, and Tauri watch permission scope explicitly allows reopening files outside the app bundle
 - Fix drawer animation jump on close — single spring transition instead of two-phase
 - Fix `ALL_TOOLS` registry missing newer tools (`analyzeColors`, `diffCreate`, `exportImage`, `arrangeNodes`)
 - Fix `renderJSX` typo in tool definitions (`renderJsx` → `renderJSX`)

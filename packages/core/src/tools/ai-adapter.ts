@@ -6,33 +6,19 @@
  */
 
 import type { FigmaAPI } from '../figma-api'
-import type { ToolDef, ParamDef, ParamType } from './schema'
+import {
+  extractCaptureHighlight,
+  extractHighlightedNodeIds
+} from './schema'
+
+import type { ToolCaptureHighlight, ToolDef, ParamDef, ParamType } from './schema'
 
 export interface AIAdapterOptions {
   getFigma: () => FigmaAPI
   onBeforeExecute?: () => void
   onAfterExecute?: () => void
   onFlashNodes?: (nodeIds: string[]) => void
-}
-
-function extractIdsFromArray(arr: unknown[]): string[] {
-  const ids: string[] = []
-  for (const item of arr) {
-    if (item && typeof item === 'object' && 'id' in item && typeof item.id === 'string') {
-      ids.push(item.id)
-    }
-  }
-  return ids
-}
-
-function extractNodeIds(result: unknown): string[] {
-  if (!result || typeof result !== 'object') return []
-  if ('deleted' in result && typeof result.deleted === 'string') return []
-  const ids: string[] = []
-  if ('id' in result && typeof result.id === 'string') ids.push(result.id)
-  if ('selection' in result && Array.isArray(result.selection)) ids.push(...extractIdsFromArray(result.selection))
-  if ('results' in result && Array.isArray(result.results)) ids.push(...extractIdsFromArray(result.results))
-  return ids
+  onCaptureHighlight?: (highlight: ToolCaptureHighlight) => void
 }
 
 export function toolsToAI(
@@ -60,9 +46,19 @@ export function toolsToAI(
         options.onBeforeExecute?.()
         try {
           const execResult = await def.execute(options.getFigma(), args as any)
-          if (def.mutates && options.onFlashNodes) {
-            const ids = extractNodeIds(execResult)
-            if (ids.length > 0) options.onFlashNodes(ids)
+          const highlightedIds = extractHighlightedNodeIds(execResult)
+          const captureHighlight = def.highlights ? extractCaptureHighlight(execResult) : null
+
+          if (def.highlights) {
+            if (captureHighlight && options.onCaptureHighlight) {
+              options.onCaptureHighlight(captureHighlight)
+            } else if (highlightedIds.length > 0 && options.onFlashNodes) {
+              options.onFlashNodes(highlightedIds)
+            }
+          }
+
+          if (def.mutates && highlightedIds.length > 0 && options.onFlashNodes) {
+            options.onFlashNodes(highlightedIds)
           }
           return execResult
         } finally {

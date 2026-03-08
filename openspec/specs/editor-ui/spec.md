@@ -294,18 +294,26 @@ The TypographySection SHALL include B/I/U/S toggle buttons for Bold, Italic, Und
 - **THEN** the entire text node's underline style toggles
 
 ### Requirement: AI chat panel
-The editor SHALL include an AI chat panel accessible via the AI tab in properties panel or ⌘J shortcut. The panel provides: message list with streaming markdown (vue-stream-markdown), tool call timeline with collapsible details (reka-ui Collapsible), typing indicator, API key setup for OpenRouter (stored in Tauri Stronghold). Messages scroll automatically (reka-ui ScrollArea).
+The editor SHALL include an AI chat panel accessible via the AI tab in properties panel or ⌘J shortcut. The panel provides: message list with streaming markdown (vue-stream-markdown), tool call timeline with collapsible details (reka-ui Collapsible), typing indicator, provider-aware API key setup, file attachments, and pasted image support. Messages scroll automatically (reka-ui ScrollArea). In the desktop app, local CLI-backed sessions SHALL call OpenPencil tools through the desktop automation bridge, SHALL stream response text and completed tool calls back into the chat timeline while the subprocess is still running, SHALL support JSX `render` through the staged helper workflow when the source workspace is available, and SHALL be cancelable from the chat UI.
 
 #### Scenario: Send message
 - **WHEN** user types a message and presses Enter in the chat input
-- **THEN** the message is sent to OpenRouter and a streaming response appears
+- **THEN** the message is sent to the selected AI backend and a streaming response appears
+
+#### Scenario: Attach a reference file
+- **WHEN** user selects a file or pastes an image into the chat input
+- **THEN** the attachment appears in the composer and is sent with the next message
+
+#### Scenario: Stop a local CLI-backed run
+- **WHEN** user clicks Stop while a Claude Code CLI or Codex CLI response is running in the desktop app
+- **THEN** the active local CLI process is asked to terminate and the chat stream finishes without adding a backend error message
 
 #### Scenario: Toggle chat
 - **WHEN** user presses ⌘J
 - **THEN** the properties panel switches to the AI tab (or back to Design)
 
 ### Requirement: AI model selector
-The chat input SHALL include a model selector with curated models: Claude, Gemini, GPT, DeepSeek, Qwen, Kimi, Llama. Models are stored in @open-pencil/core constants with benchmark-ranked tags.
+The chat input SHALL include a model selector with curated models: Claude, Gemini, GPT, DeepSeek, Qwen, Kimi, Llama. Models are stored in @open-pencil/core constants with benchmark-ranked tags and include backend routing metadata for direct API providers and desktop CLI backends.
 
 #### Scenario: Change model
 - **WHEN** user selects a different model from the selector
@@ -323,11 +331,11 @@ The chat SHALL support 10 design tools with valibot schemas: create_shape, set_f
 - **THEN** a collapsible tool call section shows the tool name, input, and output
 
 ### Requirement: DirectChatTransport
-The chat SHALL communicate directly with OpenRouter from the browser — no backend server required. The API key is stored securely in Tauri Stronghold (or localStorage fallback in browser). X-OpenRouter-Title header identifies the app.
+The chat SHALL communicate directly with supported AI providers from the app — no proxy backend server required. Provider credentials are stored locally, OpenRouter requests include the X-OpenRouter-Title header for app identification, and desktop builds MAY offer local CLI backends that plan one OpenPencil tool call at a time.
 
 #### Scenario: No backend required
-- **WHEN** user configures an OpenRouter API key and sends a message
-- **THEN** the request goes directly to OpenRouter without a proxy server
+- **WHEN** user configures a supported provider key and sends a message
+- **THEN** the request goes directly to that provider without a proxy server
 
 ### Requirement: Code panel with JSX export
 The properties panel Code tab SHALL display the selected node(s) as JSX code using sceneNodeToJsx(). The panel provides Prism.js syntax highlighting, line numbers, and a copy-to-clipboard button. Multi-selection shows each node's JSX.

@@ -19,12 +19,14 @@ import IconChevronRight from '~icons/lucide/chevron-right'
 import { computed, ref } from 'vue'
 
 import { useInlineRename } from '@/composables/use-inline-rename'
+import { useRecentFiles } from '@/composables/use-recent-files'
 import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu'
 import { IS_TAURI } from '@/constants'
-import { openFileDialog } from '@/composables/use-menu'
+import { openFileDialog, openRecentFile } from '@/composables/use-menu'
 import { useEditorStore } from '@/stores/editor'
 
 const store = useEditorStore()
+const { recentFileMenuEntries } = useRecentFiles()
 
 const DOCUMENT_NAME_ID = 'document-name'
 const rename = useInlineRename<'document-name'>((_id, name) => {
@@ -58,36 +60,49 @@ interface MenuItem {
   sub?: MenuItem[]
 }
 
-const fileMenu: MenuItem[] = [
-  {
-    label: 'New',
-    shortcut: `${mod}N`,
-    action: () => import('@/stores/tabs').then((m) => m.createTab())
-  },
-  { label: 'Open…', shortcut: `${mod}O`, action: () => openFileDialog() },
-  { separator: true },
-  { label: 'Save', shortcut: `${mod}S`, action: () => store.saveFigFile() },
-  { label: 'Save as…', shortcut: `${mod}⇧S`, action: () => store.saveFigFileAs() },
-  { separator: true },
-  {
-    label: 'Export selection…',
-    shortcut: `${mod}⇧E`,
-    action: () => {
-      if (store.state.selectedIds.size > 0) store.exportSelection(1, 'PNG')
+const fileMenu = computed<MenuItem[]>(() => {
+  const recentSubmenu =
+    recentFileMenuEntries.value.length > 0
+      ? recentFileMenuEntries.value.map((entry) => ({
+          label: entry.label,
+          action: () => {
+            void openRecentFile(entry.path)
+          }
+        }))
+      : [{ label: 'No Recent Files', disabled: true }]
+
+  return [
+    {
+      label: 'New',
+      shortcut: `${mod}N`,
+      action: () => import('@/stores/tabs').then((m) => m.createTab())
     },
-    disabled: store.state.selectedIds.size === 0
-  },
-  { separator: true },
-  {
-    label: 'Auto-save to local file',
-    get checked() {
-      return store.state.autosaveEnabled
+    { label: 'Open…', shortcut: `${mod}O`, action: () => openFileDialog() },
+    { label: 'Open Recent', sub: recentSubmenu },
+    { separator: true },
+    { label: 'Save', shortcut: `${mod}S`, action: () => store.saveFigFile() },
+    { label: 'Save as…', shortcut: `${mod}⇧S`, action: () => store.saveFigFileAs() },
+    { separator: true },
+    {
+      label: 'Export selection…',
+      shortcut: `${mod}⇧E`,
+      action: () => {
+        if (store.state.selectedIds.size > 0) store.exportSelection(1, 'PNG')
+      },
+      disabled: store.state.selectedIds.size === 0
     },
-    onCheckedChange: (v: boolean) => {
-      store.state.autosaveEnabled = v
+    { separator: true },
+    {
+      label: 'Auto-save to local file',
+      get checked() {
+        return store.state.autosaveEnabled
+      },
+      onCheckedChange: (v: boolean) => {
+        store.state.autosaveEnabled = v
+      }
     }
-  }
-]
+  ]
+})
 
 const editMenu: MenuItem[] = [
   { label: 'Undo', shortcut: `${mod}Z`, action: () => store.undoAction() },
@@ -162,14 +177,14 @@ const arrangeMenu: MenuItem[] = [
   { label: 'Align bottom', shortcut: '⌥S' }
 ]
 
-const topMenus = [
-  { label: 'File', items: fileMenu },
+const topMenus = computed(() => [
+  { label: 'File', items: fileMenu.value },
   { label: 'Edit', items: editMenu },
   { label: 'View', items: viewMenu },
   { label: 'Object', items: objectMenu },
   { label: 'Text', items: textMenu },
   { label: 'Arrange', items: arrangeMenu }
-]
+])
 </script>
 
 <template>

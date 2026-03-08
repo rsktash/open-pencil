@@ -76,7 +76,7 @@ const { activeTab } = useAIChat()
         :force-mount="true"
         :hidden="activeTab !== 'ai'"
       >
-        <ChatPanel />
+        <ChatPanel :active="activeTab === 'ai'" />
       </TabsContent>
     </TabsRoot>
   </aside>

@@ -153,6 +153,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>, store: Edito
         hoveredNodeId: store.state.hoveredNodeId,
         editingTextId: store.state.editingTextId,
         textEditor: store.textEditor,
+        captureHighlight: store.state.captureHighlight,
         marquee: store.state.marquee,
         snapGuides: store.state.snapGuides,
         rotationPreview: store.state.rotationPreview,

@@ -36,6 +36,7 @@ test('File menu opens and shows items', async () => {
 
   const items = await menu.locator('[role="menuitem"]').allTextContents()
   expect(items.some((t) => t.includes('Open'))).toBe(true)
+  expect(items.some((t) => t.includes('Open Recent'))).toBe(true)
   expect(items.some((t) => t.includes('Save'))).toBe(true)
   expect(items.some((t) => t.includes('Save as'))).toBe(true)
 
@@ -86,16 +87,22 @@ test('Object menu shows Group/Ungroup/Component', async () => {
 
 test('Undo via Edit menu works', async () => {
   await canvas.drawRect(200, 200, 100, 100)
-  const beforeUndo = await page.evaluate(() => window.__OPEN_PENCIL_STORE__!.state.selectedIds.size)
+  const beforeUndo = await page.evaluate(() => {
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
+    return store.state.selectedIds.size
+  })
   expect(beforeUndo).toBe(1)
 
   await page.locator('[role="menubar"] [role="menuitem"]', { hasText: 'Edit' }).click()
   await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Undo' }).click()
   await canvas.waitForRender()
 
-  const afterUndo = await page.evaluate(
-    () => window.__OPEN_PENCIL_STORE__!.state.selectedIds.size
-  )
+  const afterUndo = await page.evaluate(() => {
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
+    return store.state.selectedIds.size
+  })
   expect(afterUndo).toBe(0)
 })
 
@@ -103,7 +110,8 @@ test('Duplicate via Edit menu works', async () => {
   await canvas.drawRect(300, 300, 80, 80)
 
   const countBefore = await page.evaluate(() => {
-    const store = window.__OPEN_PENCIL_STORE__!
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
     return store.graph.getChildren(store.state.currentPageId).length
   })
 
@@ -112,7 +120,8 @@ test('Duplicate via Edit menu works', async () => {
   await canvas.waitForRender()
 
   const countAfter = await page.evaluate(() => {
-    const store = window.__OPEN_PENCIL_STORE__!
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
     return store.graph.getChildren(store.state.currentPageId).length
   })
 
@@ -124,13 +133,21 @@ test('Zoom to fit via View menu works', async () => {
   await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Zoom in' }).click()
   await canvas.waitForRender()
 
-  const zoomBefore = await page.evaluate(() => window.__OPEN_PENCIL_STORE__!.state.zoom)
+  const zoomBefore = await page.evaluate(() => {
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
+    return store.state.zoom
+  })
   expect(zoomBefore).toBeGreaterThan(1)
 
   await page.locator('[role="menubar"] [role="menuitem"]', { hasText: 'View' }).click()
   await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Zoom to fit' }).click()
   await canvas.waitForRender()
 
-  const zoomAfter = await page.evaluate(() => window.__OPEN_PENCIL_STORE__!.state.zoom)
+  const zoomAfter = await page.evaluate(() => {
+    const store = window.__OPEN_PENCIL_STORE__
+    if (!store) throw new Error('Editor store unavailable')
+    return store.state.zoom
+  })
   expect(zoomAfter).not.toBe(zoomBefore)
 })

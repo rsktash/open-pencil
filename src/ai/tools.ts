@@ -15,6 +15,9 @@ export function createAITools(store: EditorStore) {
       onAfterExecute: () => {
         store.requestRender()
       },
+      onCaptureHighlight: (highlight) => {
+        store.showCaptureHighlight(highlight.rects)
+      },
       onFlashNodes: (nodeIds) => {
         store.flashNodes(nodeIds)
       }

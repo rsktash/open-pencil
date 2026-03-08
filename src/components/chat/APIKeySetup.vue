@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
+import ChatModelSelector from '@/components/chat/ChatModelSelector.vue'
 import { useAIChat } from '@/composables/use-chat'
 
-const { apiKey } = useAIChat()
+const { apiKey, backendInfo } = useAIChat()
 
-const input = ref('')
+const input = ref(apiKey.value)
+
+watch(apiKey, (value) => {
+  input.value = value
+})
+
+const helperText = computed(
+  () =>
+    `Enter your ${backendInfo.value.keyLabel} to use ${backendInfo.value.name}-backed chat in OpenPencil.`
+)
 
 function save() {
   apiKey.value = input.value.trim()
-  input.value = ''
 }
 </script>
 
@@ -18,14 +27,17 @@ function save() {
     data-test-id="api-key-setup"
     class="flex flex-1 flex-col items-center justify-center gap-4 px-4"
   >
-    <icon-lucide-key-round class="size-8 text-muted" />
-    <p class="text-center text-xs text-muted">Enter your OpenRouter API key to start chatting.</p>
-    <form class="flex w-full gap-1.5" @submit.prevent="save">
+    <div class="flex flex-col items-center gap-2">
+      <icon-lucide-key-round class="size-8 text-muted" />
+      <ChatModelSelector />
+    </div>
+    <p class="max-w-72 text-center text-xs text-muted">{{ helperText }}</p>
+    <form class="flex w-full max-w-80 gap-1.5" @submit.prevent="save">
       <input
         v-model="input"
         type="password"
         data-test-id="api-key-input"
-        placeholder="sk-or-…"
+        :placeholder="backendInfo.keyPlaceholder"
         class="min-w-0 flex-1 rounded border border-border bg-input px-2 py-1 text-xs text-surface outline-none focus:border-accent"
       />
       <button
@@ -38,12 +50,12 @@ function save() {
       </button>
     </form>
     <a
-      href="https://openrouter.ai/keys"
+      :href="backendInfo.keyLink"
       target="_blank"
       data-test-id="api-key-get-link"
       class="text-[10px] text-muted underline hover:text-surface"
     >
-      Get an API key →
+      {{ backendInfo.keyLinkLabel }} →
     </a>
   </div>
 </template>

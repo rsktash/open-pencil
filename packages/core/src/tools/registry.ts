@@ -28,7 +28,7 @@ import {
   booleanUnion, booleanSubtract, booleanIntersect, booleanExclude,
   pathGet, pathSet, pathScale, pathFlip, pathMove,
   viewportGet, viewportSet, viewportZoomToFit,
-  exportSvg, exportImage
+  exportSvg, exportImage, takeScreenshot
 } from './vector'
 import {
   analyzeColors, analyzeTypography, analyzeSpacing, analyzeClusters,
@@ -122,6 +122,7 @@ export const ALL_TOOLS: ToolDef[] = [
   viewportZoomToFit,
   exportSvg,
   exportImage,
+  takeScreenshot,
   // Analyze & diff
   analyzeColors,
   analyzeTypography,

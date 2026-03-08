@@ -1,5 +1,59 @@
 import { defineTool, nodeSummary } from './schema'
 
+import type { FigmaNodeProxy } from '../figma-api'
+import type { ToolCaptureHighlight, ToolCaptureRect } from './schema'
+
+function nodeToCaptureRect(node: FigmaNodeProxy): ToolCaptureRect {
+  const bounds = node.absoluteBoundingBox
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    ...(node.rotation !== 0 ? { rotation: node.rotation } : {})
+  }
+}
+
+function aggregateCaptureRect(nodes: readonly FigmaNodeProxy[]): ToolCaptureRect | null {
+  if (nodes.length === 0) return null
+
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const node of nodes) {
+    const bounds = node.absoluteBoundingBox
+    minX = Math.min(minX, bounds.x)
+    minY = Math.min(minY, bounds.y)
+    maxX = Math.max(maxX, bounds.x + bounds.width)
+    maxY = Math.max(maxY, bounds.y + bounds.height)
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  }
+}
+
+function buildCaptureHighlight(
+  target: 'PAGE' | 'SELECTION' | 'NODES',
+  nodes: readonly FigmaNodeProxy[]
+): ToolCaptureHighlight | null {
+  if (target === 'PAGE') {
+    const rect = aggregateCaptureRect(nodes)
+    return rect ? { rects: [rect] } : null
+  }
+
+  const rects = nodes.map(nodeToCaptureRect)
+  return rects.length > 0 ? { rects } : null
+}
+
 export const booleanUnion = defineTool({
   name: 'boolean_union',
   mutates: true,
@@ -300,6 +354,91 @@ export const exportImage = defineTool({
         : btoa(String.fromCharCode(...data))
     const mimeMap = { PNG: 'image/png', JPG: 'image/jpeg', WEBP: 'image/webp' } as const
     return {
+      mimeType: mimeMap[format],
+      base64,
+      byteLength: data.length
+    }
+  }
+})
+
+export const takeScreenshot = defineTool({
+  name: 'take_screenshot',
+  highlights: true,
+  description:
+    'Capture a screenshot-style raster image of the current page, current selection, or explicit node IDs. Use this to compare the current design state with a reference image attachment.',
+  params: {
+    ids: {
+      type: 'string[]',
+      description: 'Specific node IDs to capture. Overrides target when provided.'
+    },
+    target: {
+      type: 'string',
+      description: 'Capture scope when ids are omitted',
+      enum: ['PAGE', 'SELECTION'],
+      default: 'PAGE'
+    },
+    format: {
+      type: 'string',
+      description: 'Image format',
+      enum: ['PNG', 'JPG', 'WEBP'],
+      default: 'PNG'
+    },
+    scale: {
+      type: 'number',
+      description: 'Capture scale multiplier (default: 1)',
+      default: 1,
+      min: 0.1,
+      max: 4
+    }
+  },
+  execute: async (figma, args) => {
+    if (!figma.exportImage) {
+      return { error: 'Image export is not available in this environment' }
+    }
+
+    const target = ((args.target as string) ?? 'PAGE').toUpperCase() as 'PAGE' | 'SELECTION'
+    const explicitIds =
+      args.ids?.filter((id): id is string => typeof id === 'string' && id.length > 0) ?? []
+    const screenshotNodes =
+      explicitIds.length > 0
+        ? explicitIds
+            .map((id) => figma.getNodeById(id))
+            .filter((node): node is FigmaNodeProxy => node !== null)
+        : target === 'SELECTION'
+          ? [...figma.currentPage.selection]
+          : [...figma.currentPage.children]
+    const screenshotIds = screenshotNodes.map((node) => node.id)
+
+    if (screenshotIds.length === 0) {
+      return {
+        error:
+          explicitIds.length > 0
+            ? 'No valid nodes to capture'
+            : target === 'SELECTION'
+            ? 'No selected nodes to capture'
+            : 'No visible nodes on the current page to capture'
+      }
+    }
+
+    const format = ((args.format as string) ?? 'PNG').toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
+    const data = await figma.exportImage(screenshotIds, {
+      scale: args.scale ?? 1,
+      format
+    })
+    if (!data || data.length === 0) return { error: 'No visible nodes to capture' }
+
+    const base64 =
+      typeof Buffer !== 'undefined'
+        ? Buffer.from(data).toString('base64')
+        : btoa(String.fromCharCode(...data))
+    const mimeMap = { PNG: 'image/png', JPG: 'image/jpeg', WEBP: 'image/webp' } as const
+    const resolvedTarget = explicitIds.length > 0 ? 'NODES' : target
+    const captureHighlight = buildCaptureHighlight(resolvedTarget, screenshotNodes)
+
+    return {
+      target: resolvedTarget,
+      highlightIds: screenshotIds,
+      ...(captureHighlight ? { captureHighlight } : {}),
       mimeType: mimeMap[format],
       base64,
       byteLength: data.length

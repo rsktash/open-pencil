@@ -60,6 +60,7 @@ import {
   drawHandle as drawHandleFn,
   drawSnapGuides as drawSnapGuidesFn,
   drawMarquee as drawMarqueeFn,
+  drawCaptureHighlight as drawCaptureHighlightFn,
   drawFlashes as drawFlashesFn,
   drawLayoutInsertIndicator as drawLayoutInsertIndicatorFn,
   drawTextEditOverlay as drawTextEditOverlayFn,
@@ -147,6 +148,16 @@ export interface RenderOverlays {
     y: number
     selection?: string[]
   }>
+  captureHighlight?: {
+    rects: Array<{
+      x: number
+      y: number
+      width: number
+      height: number
+      rotation?: number
+    }>
+    startedAt: number
+  } | null
 }
 
 export class SkiaRenderer {
@@ -209,6 +220,7 @@ export class SkiaRenderer {
   _culledCount = 0
   _flashes: Array<{ nodeId: string; startTime: number }> = []
   _flashPaint: Paint | null = null
+  _flashFillPaint: Paint | null = null
 
   readonly DEFAULT_FONT_SIZE = DEFAULT_FONT_SIZE
   readonly COMPONENT_SET_BORDER_WIDTH = COMPONENT_SET_BORDER_WIDTH
@@ -649,6 +661,7 @@ export class SkiaRenderer {
     p.beginPhase('render:selection')
     this.drawSelection(canvas, graph, selectedIds, overlays)
     p.endPhase('render:selection')
+    this.drawCaptureHighlight(canvas, overlays.captureHighlight)
     this.drawFlashes(canvas, graph)
     this.drawSnapGuides(canvas, overlays.snapGuides)
     this.drawMarquee(canvas, overlays.marquee)
@@ -936,6 +949,7 @@ export class SkiaRenderer {
     this.nodePictureCache.clear()
     this.scenePicture?.delete()
     this._flashPaint?.delete()
+    this._flashFillPaint?.delete()
     this.profiler.destroy()
     this.surface.delete()
   }
@@ -984,6 +998,13 @@ export class SkiaRenderer {
 
   private drawMarquee(canvas: Canvas, marquee?: Rect | null): void {
     drawMarqueeFn(this, canvas, marquee)
+  }
+
+  private drawCaptureHighlight(
+    canvas: Canvas,
+    captureHighlight?: RenderOverlays['captureHighlight']
+  ): void {
+    drawCaptureHighlightFn(this, canvas, captureHighlight)
   }
 
   private drawFlashes(canvas: Canvas, graph: SceneGraph): void {

@@ -24,7 +24,17 @@ import {
   FLASH_STROKE_WIDTH,
   FLASH_PADDING,
   FLASH_OVERSHOOT,
-  FLASH_RADIUS
+  FLASH_RADIUS,
+  FLASH_FILL_ALPHA,
+  FLASH_SWEEP_ALPHA,
+  FLASH_SWEEP_WIDTH,
+  CAPTURE_HIGHLIGHT_DURATION_MS,
+  CAPTURE_HIGHLIGHT_STROKE_WIDTH,
+  CAPTURE_HIGHLIGHT_PADDING,
+  CAPTURE_HIGHLIGHT_RADIUS,
+  CAPTURE_HIGHLIGHT_FILL_ALPHA,
+  CAPTURE_HIGHLIGHT_SWEEP_ALPHA,
+  CAPTURE_HIGHLIGHT_SWEEP_WIDTH
 } from '../constants'
 import type { SceneNode, SceneGraph } from '../scene-graph'
 import type { SnapGuide } from '../snap'
@@ -438,6 +448,12 @@ export function drawFlashes(r: SkiaRenderer, canvas: Canvas, graph: SceneGraph):
   }
 
   const paint = r._flashPaint
+  if (!r._flashFillPaint) {
+    r._flashFillPaint = new ck.Paint()
+    r._flashFillPaint.setStyle(ck.PaintStyle.Fill)
+    r._flashFillPaint.setAntiAlias(true)
+  }
+  const fillPaint = r._flashFillPaint
   const zoom = r.zoom
 
   for (let i = r._flashes.length - 1; i >= 0; i--) {
@@ -482,6 +498,9 @@ export function drawFlashes(r: SkiaRenderer, canvas: Canvas, graph: SceneGraph):
 
     paint.setColor(ck.Color4f(FLASH_COLOR.r, FLASH_COLOR.g, FLASH_COLOR.b, opacity))
     paint.setStrokeWidth(FLASH_STROKE_WIDTH)
+    fillPaint.setColor(
+      ck.Color4f(FLASH_COLOR.r, FLASH_COLOR.g, FLASH_COLOR.b, opacity * FLASH_FILL_ALPHA)
+    )
 
     canvas.save()
     if (node.rotation !== 0) canvas.rotate(node.rotation, cx, cy)
@@ -491,7 +510,104 @@ export function drawFlashes(r: SkiaRenderer, canvas: Canvas, graph: SceneGraph):
       rad,
       rad
     )
+    canvas.drawRRect(rect, fillPaint)
+
+    const sweepTravel = (hw + pad) * 2 + FLASH_SWEEP_WIDTH * 2
+    const sweepProgress = Math.min(1, elapsed / totalMs)
+    const sweepLeft = cx - hw - pad - FLASH_SWEEP_WIDTH + sweepTravel * sweepProgress
+    fillPaint.setColor(ck.Color4f(1, 1, 1, opacity * FLASH_SWEEP_ALPHA))
+    canvas.save()
+    canvas.clipRRect(rect, ck.ClipOp.Intersect, true)
+    canvas.drawRect(
+      ck.LTRBRect(
+        sweepLeft,
+        cy - hh - pad,
+        sweepLeft + FLASH_SWEEP_WIDTH,
+        cy + hh + pad
+      ),
+      fillPaint
+    )
+    canvas.restore()
+
     canvas.drawRRect(rect, paint)
+    canvas.restore()
+  }
+}
+
+export function drawCaptureHighlight(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  captureHighlight?: RenderOverlays['captureHighlight']
+): void {
+  if (!captureHighlight || captureHighlight.rects.length === 0) return
+
+  const elapsed = performance.now() - captureHighlight.startedAt
+  if (elapsed > CAPTURE_HIGHLIGHT_DURATION_MS) return
+
+  const ck = r.ck
+  if (!r._flashPaint) {
+    r._flashPaint = new ck.Paint()
+    r._flashPaint.setStyle(ck.PaintStyle.Stroke)
+    r._flashPaint.setAntiAlias(true)
+  }
+  if (!r._flashFillPaint) {
+    r._flashFillPaint = new ck.Paint()
+    r._flashFillPaint.setStyle(ck.PaintStyle.Fill)
+    r._flashFillPaint.setAntiAlias(true)
+  }
+
+  const strokePaint = r._flashPaint
+  const fillPaint = r._flashFillPaint
+  const progress = Math.min(1, elapsed / CAPTURE_HIGHLIGHT_DURATION_MS)
+  const fade = progress < 0.82 ? 1 : 1 - (progress - 0.82) / 0.18
+  const opacity = Math.max(0, fade)
+
+  strokePaint.setColor(ck.Color4f(FLASH_COLOR.r, FLASH_COLOR.g, FLASH_COLOR.b, opacity))
+  strokePaint.setStrokeWidth(CAPTURE_HIGHLIGHT_STROKE_WIDTH)
+  fillPaint.setColor(
+    ck.Color4f(
+      FLASH_COLOR.r,
+      FLASH_COLOR.g,
+      FLASH_COLOR.b,
+      opacity * CAPTURE_HIGHLIGHT_FILL_ALPHA
+    )
+  )
+
+  for (const rect of captureHighlight.rects) {
+    const cx = (rect.x + rect.width / 2) * r.zoom + r.panX
+    const cy = (rect.y + rect.height / 2) * r.zoom + r.panY
+    const hw = (rect.width / 2) * r.zoom
+    const hh = (rect.height / 2) * r.zoom
+    const pad = CAPTURE_HIGHLIGHT_PADDING
+    const rrect = ck.RRectXY(
+      ck.LTRBRect(cx - hw - pad, cy - hh - pad, cx + hw + pad, cy + hh + pad),
+      CAPTURE_HIGHLIGHT_RADIUS,
+      CAPTURE_HIGHLIGHT_RADIUS
+    )
+
+    canvas.save()
+    if (rect.rotation) canvas.rotate(rect.rotation, cx, cy)
+    canvas.drawRRect(rrect, fillPaint)
+
+    const sweepTravel = (hw + pad) * 2 + CAPTURE_HIGHLIGHT_SWEEP_WIDTH * 2
+    const sweepLeft =
+      cx - hw - pad - CAPTURE_HIGHLIGHT_SWEEP_WIDTH + sweepTravel * progress
+    fillPaint.setColor(ck.Color4f(1, 1, 1, opacity * CAPTURE_HIGHLIGHT_SWEEP_ALPHA))
+    canvas.save()
+    canvas.clipRRect(rrect, ck.ClipOp.Intersect, true)
+    canvas.drawRect(
+      ck.LTRBRect(
+        sweepLeft,
+        cy - hh - pad,
+        sweepLeft + CAPTURE_HIGHLIGHT_SWEEP_WIDTH,
+        cy + hh + pad
+      ),
+      fillPaint
+    )
+    canvas.restore()
+
+    strokePaint.setColor(ck.Color4f(FLASH_COLOR.r, FLASH_COLOR.g, FLASH_COLOR.b, opacity))
+    canvas.drawRRect(rrect, strokePaint)
     canvas.restore()
   }
 }

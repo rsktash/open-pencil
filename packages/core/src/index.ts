@@ -47,8 +47,20 @@ export {
 } from './scene-graph'
 
 export { FigmaAPI, FigmaNodeProxy, type FigmaFontName } from './figma-api'
-export { ALL_TOOLS, defineTool, toolsToAI } from './tools'
-export type { ToolDef, ParamDef, ParamType } from './tools'
+export {
+  ALL_TOOLS,
+  defineTool,
+  toolsToAI,
+  extractCaptureHighlight,
+  extractHighlightedNodeIds
+} from './tools'
+export type {
+  ToolDef,
+  ParamDef,
+  ParamType,
+  ToolCaptureRect,
+  ToolCaptureHighlight
+} from './tools'
 export { executeRpcCommand, ALL_RPC_COMMANDS } from './rpc'
 export type {
   InfoResult, PageItem, TreeArgs, TreeResult, TreeNodeResult,

@@ -11,8 +11,10 @@ import {
   ZOOM_SCALE_MIN,
   ZOOM_SCALE_MAX
 } from '@/constants'
+import { rememberRecentFile } from '@/composables/use-recent-files'
 import { loadFont } from '@/engine/fonts'
 import {
+  CAPTURE_HIGHLIGHT_DURATION_MS,
   collectFontKeys,
   computeLayout,
   computeAllLayouts,
@@ -47,6 +49,7 @@ import type {
   VectorSegment,
   VectorVertex
 } from '@open-pencil/core'
+import type { ToolCaptureRect } from '@open-pencil/core'
 
 export type Tool =
   | 'SELECT'
@@ -119,6 +122,11 @@ interface PageViewport {
   pageColor: Color
 }
 
+interface CaptureHighlightOverlay {
+  rects: ToolCaptureRect[]
+  startedAt: number
+}
+
 export function createEditorStore() {
   let graph = new SceneGraph()
   const undo = new UndoManager()
@@ -133,6 +141,7 @@ export function createEditorStore() {
   let _ck: import('canvaskit-wasm').CanvasKit | null = null
   let _renderer: import('@open-pencil/core').SkiaRenderer | null = null
   let _textEditor: TextEditor | null = null
+  let captureHighlightRafId = 0
 
   prefetchFigmaSchema()
 
@@ -158,6 +167,7 @@ export function createEditorStore() {
     marquee: null as Rect | null,
     snapGuides: [] as SnapGuide[],
     rotationPreview: null as { nodeId: string; angle: number } | null,
+    captureHighlight: null as CaptureHighlightOverlay | null,
     dropTargetId: null as string | null,
     layoutInsertIndicator: null as {
       parentId: string
@@ -257,6 +267,40 @@ export function createEditorStore() {
     if (!flashRafId) pumpFlashes()
   }
 
+  function getOverlayNow() {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now()
+  }
+
+  function pumpCaptureHighlight() {
+    if (!state.captureHighlight) {
+      captureHighlightRafId = 0
+      return
+    }
+    if (getOverlayNow() - state.captureHighlight.startedAt >= CAPTURE_HIGHLIGHT_DURATION_MS) {
+      state.captureHighlight = null
+      captureHighlightRafId = 0
+      requestRepaint()
+      return
+    }
+    requestRepaint()
+    captureHighlightRafId =
+      typeof requestAnimationFrame === 'function' ? requestAnimationFrame(pumpCaptureHighlight) : 0
+  }
+
+  function showCaptureHighlight(rects: ToolCaptureRect[]) {
+    if (rects.length === 0) return
+    state.captureHighlight = {
+      rects: structuredClone(rects),
+      startedAt: getOverlayNow()
+    }
+    requestRepaint()
+    if (captureHighlightRafId && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(captureHighlightRafId)
+    }
+    captureHighlightRafId =
+      typeof requestAnimationFrame === 'function' ? requestAnimationFrame(pumpCaptureHighlight) : 0
+  }
+
   function pumpFlashes() {
     if (!_renderer?.hasActiveFlashes) {
       flashRafId = 0
@@ -285,6 +329,7 @@ export function createEditorStore() {
     // Switch
     state.currentPageId = pageId
     clearSelection()
+    state.captureHighlight = null
 
     // Restore viewport
     const vp = pageViewports.get(pageId)
@@ -608,6 +653,7 @@ export function createEditorStore() {
       state.documentName = file.name.replace(/\.fig$/i, '')
       downloadName = file.name
       state.selectedIds = new Set()
+      state.captureHighlight = null
       const firstPage = graph.getPages()[0]
       state.currentPageId = firstPage?.id ?? graph.rootId
       state.panX = 0
@@ -617,6 +663,7 @@ export function createEditorStore() {
       await loadFontsForNodes(graph.getChildren(firstPage?.id ?? graph.rootId).map((n) => n.id))
       requestRender()
       startWatchingFile()
+      if (path) rememberRecentFile(path, file.name)
     } catch (e) {
       console.error('Failed to open .fig file:', e)
     } finally {
@@ -667,6 +714,7 @@ export function createEditorStore() {
           ?.replace(/\.fig$/i, '') ?? 'Untitled'
       await writeFile(data)
       startWatchingFile()
+      rememberRecentFile(path, path.split(/[\\/]/).pop() ?? 'Untitled.fig')
       return
     }
 
@@ -741,6 +789,7 @@ export function createEditorStore() {
     undo.clear()
     savedVersion = state.sceneVersion
     state.selectedIds = new Set()
+    state.captureHighlight = null
     if (graph.getNode(pageId)) {
       state.currentPageId = pageId
     } else {
@@ -763,18 +812,22 @@ export function createEditorStore() {
     stopWatchingFile()
 
     if (filePath && IS_TAURI) {
-      const { watch: tauriWatch } = await import('@tauri-apps/plugin-fs')
-      const path = filePath
-      const unwatch = await tauriWatch(
-        path,
-        (event) => {
-          if (typeof event.type !== 'object' || !('modify' in event.type)) return
-          if (Date.now() - lastWriteTime < WATCH_DEBOUNCE_MS) return
-          reloadFromDisk()
-        },
-        { delayMs: 500 }
-      )
-      unwatchFile = () => unwatch()
+      try {
+        const { watch: tauriWatch } = await import('@tauri-apps/plugin-fs')
+        const path = filePath
+        const unwatch = await tauriWatch(
+          path,
+          (event) => {
+            if (typeof event.type !== 'object' || !('modify' in event.type)) return
+            if (Date.now() - lastWriteTime < WATCH_DEBOUNCE_MS) return
+            reloadFromDisk()
+          },
+          { delayMs: 500 }
+        )
+        unwatchFile = () => unwatch()
+      } catch (error) {
+        console.warn(`Failed to watch file changes for ${filePath}:`, error)
+      }
     } else if (fileHandle) {
       let lastModified = (await fileHandle.getFile()).lastModified
       const interval = setInterval(async () => {
@@ -2090,6 +2143,7 @@ export function createEditorStore() {
     requestRender,
     requestRepaint,
     flashNodes,
+    showCaptureHighlight,
     setTool,
     select,
     clearSelection,

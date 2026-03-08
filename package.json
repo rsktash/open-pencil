@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "tsgo --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "bun scripts/run-tauri.mjs",
     "lint": "oxlint -c oxlint.json src/",
     "format": "oxfmt --write src/",
     "typecheck": "tsgo --noEmit",
