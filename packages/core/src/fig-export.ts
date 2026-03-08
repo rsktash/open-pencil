@@ -112,7 +112,7 @@ export async function exportFigFile(
     [...graph.images.entries()].map(([hash, bytes]) => [`images/${hash}`, [bytes, { level: 0 }] as const])
   )
 
-  if (IS_TAURI) {
+  if (IS_TAURI && graph.images.size === 0) {
     const { invoke } = await import('@tauri-apps/api/core')
     return new Uint8Array(
       await invoke<number[]>('build_fig_file', {

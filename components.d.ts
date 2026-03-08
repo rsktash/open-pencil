@@ -112,6 +112,7 @@ declare module 'vue' {
     TabBar: typeof import('./src/components/TabBar.vue')['default']
     Toolbar: typeof import('./src/components/Toolbar.vue')['default']
     TypographySection: typeof import('./src/components/properties/TypographySection.vue')['default']
+    UnsavedChangesDialog: typeof import('./src/components/UnsavedChangesDialog.vue')['default']
     VariablesDialog: typeof import('./src/components/VariablesDialog.vue')['default']
     VariablesSection: typeof import('./src/components/properties/VariablesSection.vue')['default']
   }

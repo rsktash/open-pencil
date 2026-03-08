@@ -9,6 +9,8 @@
 ### Improvements
 
 - Split local and CI Tauri config — local `bun run tauri ...` now uses the base unsigned config with an optional untracked `desktop/tauri.local.conf.json` override, while GitHub builds layer `desktop/tauri.ci.conf.json` for signing-only settings
+- Dirty document close guard — closing a tab or app window with unsaved `.fig` changes now asks whether to save, discard, or cancel before the document is closed
+- Desktop startup restore — the app now reopens the most recently used `.fig` file on launch when starting into a fresh untitled tab
 
 ## 0.8.0 — 2026-03-07
 

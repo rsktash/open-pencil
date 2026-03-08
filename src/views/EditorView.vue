@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide, onUnmounted } from 'vue'
+import { provide, onMounted, onUnmounted } from 'vue'
 import { useBreakpoints, useEventListener, useUrlSearchParams } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
@@ -7,11 +7,19 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 
 import { useKeyboard } from '@/composables/use-keyboard'
 import { useMenu } from '@/composables/use-menu'
+import { openRecentFile } from '@/composables/use-menu'
+import { useRecentFiles } from '@/composables/use-recent-files'
 import { useCollab, COLLAB_KEY } from '@/composables/use-collab'
 import { connectAutomation } from '@/automation/server'
 import { createDemoShapes } from '@/demo'
 import { useEditorStore } from '@/stores/editor'
-import { createTab, activeTab, getActiveStore } from '@/stores/tabs'
+import {
+  createTab,
+  activeTab,
+  getActiveStore,
+  confirmCloseDirtyTabs,
+  hasDirtyTabs
+} from '@/stores/tabs'
 
 import CollabPanel from '@/components/CollabPanel.vue'
 import EditorCanvas from '@/components/EditorCanvas.vue'
@@ -28,12 +36,50 @@ const firstTab = createTab()
 const store = useEditorStore()
 const breakpoints = useBreakpoints({ mobile: 768 })
 const isMobile = breakpoints.smaller('mobile')
+const { recentFiles } = useRecentFiles()
 useKeyboard()
 useMenu()
 const { disconnect: disconnectAutomation } = connectAutomation(getActiveStore)
 onUnmounted(disconnectAutomation)
 const collab = useCollab(firstTab.store)
 provide(COLLAB_KEY, collab)
+
+let closeWindowCleanup: (() => void) | undefined
+let allowWindowClose = false
+
+useEventListener(window, 'beforeunload', (event) => {
+  if (!hasDirtyTabs()) return
+  event.preventDefault()
+  event.returnValue = ''
+})
+
+onMounted(() => {
+  if (!IS_TAURI) return
+
+  void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
+    const currentWindow = getCurrentWindow()
+    closeWindowCleanup = await currentWindow.onCloseRequested(async (event) => {
+      if (allowWindowClose) return
+      event.preventDefault()
+      const shouldClose = await confirmCloseDirtyTabs()
+      if (!shouldClose) return
+      allowWindowClose = true
+      await currentWindow.close()
+    })
+  })
+
+  if (route.meta.demo) return
+
+  const lastFile = recentFiles.value[0]
+  const isFreshUntitled = firstTab.store.state.documentName === 'Untitled' && !firstTab.store.undo.canUndo
+  if (!lastFile || !isFreshUntitled) return
+
+  void openRecentFile(lastFile.path)
+})
+
+onUnmounted(() => {
+  closeWindowCleanup?.()
+})
 
 useEventListener(
   document,

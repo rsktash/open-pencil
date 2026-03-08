@@ -103,7 +103,7 @@ export function useKeyboard() {
       }
       if (e.key === 'w') {
         e.preventDefault()
-        if (activeTabRef.value) closeTab(activeTabRef.value.id)
+        if (activeTabRef.value) void closeTab(activeTabRef.value.id)
         return
       }
       if (e.key === 'n' || e.key === 't') {
@@ -128,10 +128,10 @@ export function useKeyboard() {
         store.selectAll()
       } else if (e.key === 's' && e.shiftKey) {
         e.preventDefault()
-        store.saveFigFileAs()
+        void store.saveFigFileAs()
       } else if (e.key === 's') {
         e.preventDefault()
-        store.saveFigFile()
+        void store.saveFigFile()
       } else if (e.key === 'o') {
         e.preventDefault()
         openFileDialog()

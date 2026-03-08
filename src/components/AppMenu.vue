@@ -80,8 +80,8 @@ const fileMenu = computed<MenuItem[]>(() => {
     { label: 'Open…', shortcut: `${mod}O`, action: () => openFileDialog() },
     { label: 'Open Recent', sub: recentSubmenu },
     { separator: true },
-    { label: 'Save', shortcut: `${mod}S`, action: () => store.saveFigFile() },
-    { label: 'Save as…', shortcut: `${mod}⇧S`, action: () => store.saveFigFileAs() },
+    { label: 'Save', shortcut: `${mod}S`, action: () => void store.saveFigFile() },
+    { label: 'Save as…', shortcut: `${mod}⇧S`, action: () => void store.saveFigFileAs() },
     { separator: true },
     {
       label: 'Export selection…',

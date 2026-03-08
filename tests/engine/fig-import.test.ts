@@ -142,6 +142,51 @@ describe('fig-import: image fills', () => {
     expect(n.fills[0].imageScaleMode).toBe('FILL')
   })
 
+  test('legacy nibble-encoded image hashes collapse back to sha string', () => {
+    const nibbleHash: Record<string, number> = {}
+    const source = '142eaa6cab4e9b0e31c55e904c31c6d8a0ece788'
+    for (let i = 0; i < source.length; i++) {
+      nibbleHash[String(i)] = Number.parseInt(source[i], 16)
+    }
+
+    const graph = importNodeChanges([doc(), canvas(), node('RECTANGLE', 10, 1, {
+      fillPaints: [{
+        type: 'IMAGE',
+        opacity: 1,
+        visible: true,
+        blendMode: 'NORMAL',
+        image: { hash: nibbleHash, name: 'legacy-image' },
+        imageScaleMode: 'FIT',
+      }] as unknown as NodeChange['fillPaints'],
+    })])
+    const n = graph.getChildren(graph.getPages()[0].id)[0]
+    expect(n.fills[0].imageHash).toBe(source)
+    expect(n.fills[0].imageScaleMode).toBe('FIT')
+  })
+
+  test('legacy utf16-style nibble hashes collapse back to sha string', () => {
+    const nibbleHash: Record<string, number> = {}
+    const source = '142eaa6cab4e9b0e31c55e904c31c6d8a0ece788'
+    for (let i = 0; i < source.length; i++) {
+      nibbleHash[String(i * 2)] = 0
+      nibbleHash[String(i * 2 + 1)] = Number.parseInt(source[i], 16)
+    }
+
+    const graph = importNodeChanges([doc(), canvas(), node('RECTANGLE', 10, 1, {
+      fillPaints: [{
+        type: 'IMAGE',
+        opacity: 1,
+        visible: true,
+        blendMode: 'NORMAL',
+        image: { hash: nibbleHash, name: 'legacy-utf16-image' },
+        imageScaleMode: 'FIT',
+      }] as unknown as NodeChange['fillPaints'],
+    })])
+    const n = graph.getChildren(graph.getPages()[0].id)[0]
+    expect(n.fills[0].imageHash).toBe(source)
+    expect(n.fills[0].imageScaleMode).toBe('FIT')
+  })
+
   test('images stored on graph', () => {
     const images = new Map<string, Uint8Array>()
     images.set('abc123', new Uint8Array([1, 2, 3]))

@@ -355,6 +355,27 @@ describe('roundtrip: export → re-import', () => {
       fills: [{ type: 'SOLID', color: { r: 0.9, g: 0.1, b: 0.3, a: 1 }, opacity: 1, visible: true, blendMode: 'NORMAL' }],
     })
 
+    const imageHash = '00112233445566778899aabbccddeeff00112233'
+    graph.images.set(imageHash, new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
+    graph.createNode('RECTANGLE', container.id, {
+      name: 'Image Fill',
+      x: 24,
+      y: 204,
+      width: 32,
+      height: 32,
+      fills: [
+        {
+          type: 'IMAGE',
+          color: { r: 1, g: 1, b: 1, a: 1 },
+          opacity: 1,
+          visible: true,
+          blendMode: 'NORMAL',
+          imageHash,
+          imageScaleMode: 'FIT',
+        },
+      ],
+    })
+
     graph.createNode('RECTANGLE', page2.id, {
       name: 'Page2 Rect',
       x: 50,
@@ -419,6 +440,17 @@ describe('roundtrip: export → re-import', () => {
     expect(headerBg.fills[1].type).toBe('GRADIENT_LINEAR')
     expect(headerBg.fills[1].opacity).toBeCloseTo(0.5, 1)
     expect(headerBg.fills[1].gradientStops).toHaveLength(2)
+  })
+
+  test('preserves image fill hashes and image bytes', () => {
+    const imageFill = reImportedNodes.find((n) => n.name === 'Image Fill')!
+    expect(imageFill.fills).toHaveLength(1)
+    expect(imageFill.fills[0].type).toBe('IMAGE')
+    expect(imageFill.fills[0].imageHash).toBe('00112233445566778899aabbccddeeff00112233')
+    expect(imageFill.fills[0].imageScaleMode).toBe('FIT')
+    expect(reImported.images.get('00112233445566778899aabbccddeeff00112233')).toEqual(
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+    )
   })
 
   test('preserves text content', () => {

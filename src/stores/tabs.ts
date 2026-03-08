@@ -1,5 +1,8 @@
 import { shallowRef, computed } from 'vue'
 
+import { confirmUnsavedChanges } from '@/composables/use-unsaved-changes-dialog'
+import { toast } from '@/composables/use-toast'
+
 import { createEditorStore, setActiveEditorStore } from './editor'
 
 import type { EditorStore } from './editor'
@@ -54,22 +57,84 @@ export function switchTab(tabId: string) {
   activateTab(tab)
 }
 
-export function closeTab(tabId: string) {
+async function confirmStoreClose(store: EditorStore): Promise<boolean> {
+  if (!store.hasUnsavedChanges.value) return true
+
+  const documentName = store.state.documentName || 'Untitled'
+  const decision = await confirmUnsavedChanges({
+    title: `Save changes to ${documentName}?`,
+    description: 'Your changes will be lost if you close this file without saving.',
+    documentNames: [documentName]
+  })
+
+  if (decision === 'cancel') return false
+  if (decision === 'discard') return true
+
+  try {
+    return await store.saveFigFile()
+  } catch (error) {
+    console.error(`Failed to save ${documentName}:`, error)
+    toast.show(`Couldn't save ${documentName}.`, 'error')
+    return false
+  }
+}
+
+export async function confirmCloseDirtyTabs(): Promise<boolean> {
+  const dirtyTabs = tabsRef.value.filter((tab) => tab.store.hasUnsavedChanges.value)
+  if (dirtyTabs.length === 0) return true
+
+  if (dirtyTabs.length === 1) {
+    return confirmStoreClose(dirtyTabs[0].store)
+  }
+
+  const documentNames = dirtyTabs.map((tab) => tab.store.state.documentName || 'Untitled')
+  const decision = await confirmUnsavedChanges({
+    title: `Save changes to ${dirtyTabs.length} files?`,
+    description: 'Your changes will be lost if you close these files without saving.',
+    saveLabel: 'Save All',
+    discardLabel: 'Discard Changes',
+    documentNames
+  })
+
+  if (decision === 'cancel') return false
+  if (decision === 'discard') return true
+
+  for (const tab of dirtyTabs) {
+    try {
+      const saved = await tab.store.saveFigFile()
+      if (!saved) return false
+    } catch (error) {
+      console.error(`Failed to save ${tab.store.state.documentName}:`, error)
+      toast.show(`Couldn't save ${tab.store.state.documentName}.`, 'error')
+      return false
+    }
+  }
+
+  return true
+}
+
+export async function closeTab(tabId: string): Promise<boolean> {
   const idx = tabsRef.value.findIndex((t) => t.id === tabId)
-  if (idx < 0) return
+  if (idx < 0) return false
+  const tab = tabsRef.value[idx]
+  if (!tab) return false
+
+  if (!(await confirmStoreClose(tab.store))) return false
 
   const wasActive = activeTabId.value === tabId
   tabsRef.value = tabsRef.value.filter((t) => t.id !== tabId)
 
   if (tabsRef.value.length === 0) {
     createTab()
-    return
+    return true
   }
 
   if (wasActive) {
     const newIdx = Math.min(idx, tabsRef.value.length - 1)
     activateTab(tabsRef.value[newIdx])
   }
+
+  return true
 }
 
 export async function openFileInNewTab(
@@ -94,6 +159,10 @@ export function tabCount(): number {
   return tabsRef.value.length
 }
 
+export function hasDirtyTabs(): boolean {
+  return tabsRef.value.some((tab) => tab.store.hasUnsavedChanges.value)
+}
+
 export function useTabsStore() {
   return {
     tabs: allTabs,
@@ -103,6 +172,7 @@ export function useTabsStore() {
     closeTab,
     openFileInNewTab,
     getActiveStore,
-    tabCount
+    tabCount,
+    hasDirtyTabs
   }
 }

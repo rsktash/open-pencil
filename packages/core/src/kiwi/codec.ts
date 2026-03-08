@@ -194,7 +194,7 @@ export interface Paint {
   blendMode?: string
   stops?: { color: Color; position: number }[]
   transform?: { m00: number; m01: number; m02: number; m10: number; m11: number; m12: number }
-  image?: { hash: string }
+  image?: { hash: string | Uint8Array | number[] | Record<string, number> }
   imageScaleMode?: string
   colorVariableBinding?: VariableBinding
 }

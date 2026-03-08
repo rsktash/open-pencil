@@ -151,3 +151,22 @@ test('Zoom to fit via View menu works', async () => {
   })
   expect(zoomAfter).not.toBe(zoomBefore)
 })
+
+test('closing a dirty tab asks before discarding changes', async () => {
+  await canvas.drawRect(420, 220, 80, 80)
+
+  await page.locator('[role="menubar"] [role="menuitem"]', { hasText: 'File' }).click()
+  await page.locator('[role="menu"] [role="menuitem"]', { hasText: 'New' }).click()
+
+  await expect(page.locator('[data-test-id="tabbar-tab"]')).toHaveCount(2)
+
+  await page.locator('[data-test-id="tabbar-close"]').first().click({ force: true })
+  await expect(page.locator('[data-test-id="unsaved-changes-dialog"]')).toBeVisible()
+
+  await page.locator('[data-test-id="unsaved-changes-cancel"]').click()
+  await expect(page.locator('[data-test-id="tabbar-tab"]')).toHaveCount(2)
+
+  await page.locator('[data-test-id="tabbar-close"]').first().click({ force: true })
+  await page.locator('[data-test-id="unsaved-changes-discard"]').click()
+  await expect(page.locator('[data-test-id="tabbar-tab"]')).toHaveCount(1)
+})

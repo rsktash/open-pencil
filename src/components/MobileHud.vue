@@ -60,7 +60,7 @@ const menuItems: MenuAction[] = [
     action: () => import('@/stores/tabs').then((m) => m.createTab())
   },
   { icon: IconFolderOpen, label: 'Open…', action: () => openFileDialog() },
-  { icon: IconSave, label: 'Save', action: () => store.saveFigFile() },
+  { icon: IconSave, label: 'Save', action: () => void store.saveFigFile() },
   {
     icon: IconImageDown,
     label: 'Export…',

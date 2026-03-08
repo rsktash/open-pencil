@@ -110,6 +110,19 @@ export function fractionalPosition(index: number): string {
   return String.fromCharCode('!'.charCodeAt(0) + index)
 }
 
+function imageHashToBytes(hash: string): Uint8Array {
+  const normalized = hash.trim().toLowerCase()
+  if (normalized.length % 2 !== 0 || /[^0-9a-f]/.test(normalized)) {
+    return new TextEncoder().encode(hash)
+  }
+
+  const bytes = new Uint8Array(normalized.length / 2)
+  for (let i = 0; i < normalized.length; i += 2) {
+    bytes[i / 2] = Number.parseInt(normalized.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
 function exportTextData(node: SceneNode): NodeChange['textData'] {
   const runs = node.styleRuns
   if (runs.length === 0) {
@@ -186,7 +199,7 @@ export function sceneNodeToKiwi(
       paint.stops = f.gradientStops.map((s) => ({ color: s.color, position: s.position }))
     }
     if (f.gradientTransform) paint.transform = f.gradientTransform
-    if (f.imageHash) paint.image = { hash: f.imageHash }
+    if (f.imageHash) paint.image = { hash: imageHashToBytes(f.imageHash) }
     if (f.imageScaleMode) paint.imageScaleMode = f.imageScaleMode
     if (f.imageTransform) paint.transform = f.imageTransform
     return paint

@@ -85,10 +85,14 @@ const MENU_ACTIONS: Record<string, () => void> = {
   new: () => createTab(),
   open: () => openFileDialog(),
   close: () => {
-    if (activeTab.value) closeTab(activeTab.value.id)
+    if (activeTab.value) void closeTab(activeTab.value.id)
   },
-  save: () => store.saveFigFile(),
-  'save-as': () => store.saveFigFileAs(),
+  save: () => {
+    void store.saveFigFile()
+  },
+  'save-as': () => {
+    void store.saveFigFileAs()
+  },
   duplicate: () => store.duplicateSelected(),
   delete: () => store.deleteSelected(),
   group: () => store.groupSelected(),

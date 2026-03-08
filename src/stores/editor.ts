@@ -134,7 +134,7 @@ export function createEditorStore() {
   let fileHandle: FileSystemFileHandle | null = null
   let filePath: string | null = null
   let downloadName: string | null = null
-  let savedVersion = 0
+  const savedVersion = shallowRef(0)
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined
   let lastWriteTime = 0
   let unwatchFile: (() => void) | null = null
@@ -216,12 +216,12 @@ export function createEditorStore() {
   watch(
     () => state.sceneVersion,
     (version) => {
-      if (version === savedVersion) return
+      if (version === savedVersion.value) return
       if (!state.autosaveEnabled) return
       if (!fileHandle && !filePath) return
       clearTimeout(autosaveTimer)
       autosaveTimer = setTimeout(async () => {
-        if (state.sceneVersion === savedVersion) return
+        if (state.sceneVersion === savedVersion.value) return
         if (!state.autosaveEnabled) return
         try {
           await writeFile(await buildFigFile())
@@ -245,6 +245,8 @@ export function createEditorStore() {
   const selectedNode = computed(() =>
     selectedNodes.value.length === 1 ? selectedNodes.value[0] : undefined
   )
+
+  const hasUnsavedChanges = computed(() => state.sceneVersion !== savedVersion.value)
 
   const layerTree = computed(() => {
     void state.sceneVersion
@@ -662,6 +664,7 @@ export function createEditorStore() {
       state.pageColor = { ...CANVAS_BG_COLOR }
       await loadFontsForNodes(graph.getChildren(firstPage?.id ?? graph.rootId).map((n) => n.id))
       requestRender()
+      savedVersion.value = state.sceneVersion
       startWatchingFile()
       if (path) rememberRecentFile(path, file.name)
     } catch (e) {
@@ -685,17 +688,20 @@ export function createEditorStore() {
     return exportFigFile(graph, _ck ?? undefined, _renderer ?? undefined, state.currentPageId)
   }
 
-  async function saveFigFile() {
+  async function saveFigFile(): Promise<boolean> {
     if (filePath || fileHandle) {
       await writeFile(await buildFigFile())
+      return true
     } else if (downloadName) {
       downloadBlob(new Uint8Array(await buildFigFile()), downloadName, 'application/octet-stream')
+      savedVersion.value = state.sceneVersion
+      return true
     } else {
-      await saveFigFileAs()
+      return saveFigFileAs()
     }
   }
 
-  async function saveFigFileAs() {
+  async function saveFigFileAs(): Promise<boolean> {
     const data = await buildFigFile()
 
     if (IS_TAURI) {
@@ -704,7 +710,7 @@ export function createEditorStore() {
         defaultPath: 'Untitled.fig',
         filters: [{ name: 'Figma file', extensions: ['fig'] }]
       })
-      if (!path) return
+      if (!path) return false
       filePath = path
       fileHandle = null
       state.documentName =
@@ -715,7 +721,7 @@ export function createEditorStore() {
       await writeFile(data)
       startWatchingFile()
       rememberRecentFile(path, path.split(/[\\/]/).pop() ?? 'Untitled.fig')
-      return
+      return true
     }
 
     if (window.showSaveFilePicker) {
@@ -734,17 +740,19 @@ export function createEditorStore() {
         state.documentName = handle.name.replace(/\.fig$/i, '')
         await writeFile(data)
         startWatchingFile()
-        return
+        return true
       } catch (e) {
-        if ((e as Error).name === 'AbortError') return
+        if ((e as Error).name === 'AbortError') return false
       }
     }
 
     const filename = prompt('Save as:', downloadName ?? 'Untitled.fig')
-    if (!filename) return
+    if (!filename) return false
     downloadName = filename
     state.documentName = filename.replace(/\.fig$/i, '')
     downloadBlob(new Uint8Array(data), filename, 'application/octet-stream')
+    savedVersion.value = state.sceneVersion
+    return true
   }
 
   async function writeFile(data: Uint8Array) {
@@ -752,14 +760,14 @@ export function createEditorStore() {
     if (filePath && IS_TAURI) {
       const { writeFile: tauriWrite } = await import('@tauri-apps/plugin-fs')
       await tauriWrite(filePath, data)
-      savedVersion = state.sceneVersion
+      savedVersion.value = state.sceneVersion
       return
     }
     if (fileHandle) {
       const writable = await fileHandle.createWritable()
       await writable.write(new Uint8Array(data))
       await writable.close()
-      savedVersion = state.sceneVersion
+      savedVersion.value = state.sceneVersion
     }
   }
 
@@ -787,7 +795,6 @@ export function createEditorStore() {
     }
 
     undo.clear()
-    savedVersion = state.sceneVersion
     state.selectedIds = new Set()
     state.captureHighlight = null
     if (graph.getNode(pageId)) {
@@ -799,6 +806,7 @@ export function createEditorStore() {
     state.panY = viewport.panY
     state.zoom = viewport.zoom
     requestRender()
+    savedVersion.value = state.sceneVersion
   }
 
   function stopWatchingFile() {
@@ -2139,6 +2147,7 @@ export function createEditorStore() {
     state,
     selectedNodes,
     selectedNode,
+    hasUnsavedChanges,
     layerTree,
     requestRender,
     requestRepaint,

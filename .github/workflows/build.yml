@@ -114,6 +114,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARIZE_WAIT: false
         with:
           tauriScript: bunx tauri
           args: --config desktop/tauri.ci.conf.json --target ${{ matrix.target }}

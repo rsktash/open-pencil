@@ -41,10 +41,25 @@ export function guidToString(guid: GUID): string {
 
 const convertColor = normalizeColor
 
-function imageHashToString(hash: Record<string, number>): string {
-  const bytes = Object.keys(hash)
-    .sort((a, b) => Number(a) - Number(b))
-    .map((k) => hash[Number(k)])
+function imageHashToString(hash: Uint8Array | number[] | Record<string, number>): string {
+  const bytes = Array.isArray(hash)
+    ? hash
+    : hash instanceof Uint8Array
+      ? [...hash]
+      : Object.keys(hash)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((k) => hash[Number(k)])
+  if (bytes.length === 40 && bytes.every((b) => b >= 0 && b <= 15)) {
+    return bytes.map((b) => b.toString(16)).join('')
+  }
+  if (bytes.length === 80) {
+    if (bytes.every((b, index) => (index % 2 === 0 ? b === 0 : b >= 0 && b <= 15))) {
+      return bytes.filter((_, index) => index % 2 === 1).map((b) => b.toString(16)).join('')
+    }
+    if (bytes.every((b, index) => (index % 2 === 1 ? b === 0 : b >= 0 && b <= 15))) {
+      return bytes.filter((_, index) => index % 2 === 0).map((b) => b.toString(16)).join('')
+    }
+  }
   return bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -83,7 +98,7 @@ export function convertFills(paints?: Paint[]): Fill[] {
 
     if (p.type === 'IMAGE') {
       if (p.image && typeof p.image === 'object') {
-        const img = p.image as { hash: string | Record<string, number> }
+        const img = p.image as { hash: string | Uint8Array | number[] | Record<string, number> }
         if (typeof img.hash === 'object') {
           base.imageHash = imageHashToString(img.hash)
         } else if (typeof img.hash === 'string') {
