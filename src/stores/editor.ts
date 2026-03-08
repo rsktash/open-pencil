@@ -789,7 +789,7 @@ export function createEditorStore() {
           ]
         })
         const writable = await handle.createWritable()
-        await writable.write(data)
+        await writable.write(toWritableBuffer(data))
         await writable.close()
         return true
       } catch (e) {
@@ -811,7 +811,7 @@ export function createEditorStore() {
     }
     if (fileHandle) {
       const writable = await fileHandle.createWritable()
-      await writable.write(new Uint8Array(data))
+      await writable.write(toWritableBuffer(data))
       await writable.close()
       savedVersion.value = state.sceneVersion
     }
@@ -1001,7 +1001,7 @@ export function createEditorStore() {
           ]
         })
         const writable = await handle.createWritable()
-        await writable.write(new Uint8Array(data))
+        await writable.write(toWritableBuffer(data))
         await writable.close()
         return
       } catch (e) {
@@ -1027,6 +1027,12 @@ export function createEditorStore() {
       }
       parent = parent.parentId ? graph.getNode(parent.parentId) : undefined
     }
+  }
+
+  function toWritableBuffer(data: Uint8Array): ArrayBuffer {
+    const copy = new Uint8Array(data.byteLength)
+    copy.set(data)
+    return copy.buffer
   }
 
   function updateNode(id: string, changes: Partial<SceneNode>) {
