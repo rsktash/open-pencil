@@ -1,6 +1,19 @@
+import { createNanoEvents } from 'nanoevents'
+
 import { BLACK, DEFAULT_FONT_FAMILY, DEFAULT_STROKE_MITER_LIMIT } from './constants'
+import { copyEffects, copyFills, copyStrokes, copyStyleRuns } from './copy'
 
 export type { GUID, Color } from './types'
+import type { Matrix, Vector, Color, Rect } from './types'
+import type { Emitter } from 'nanoevents'
+
+export interface SceneGraphEvents {
+  'node:created': (node: SceneNode) => void
+  'node:updated': (id: string, changes: Partial<SceneNode>) => void
+  'node:deleted': (id: string) => void
+  'node:reparented': (nodeId: string, oldParentId: string | null, newParentId: string) => void
+  'node:reordered': (nodeId: string, parentId: string, index: number) => void
+}
 
 export type HandleMirroring = 'NONE' | 'ANGLE' | 'ANGLE_AND_LENGTH'
 export type WindingRule = 'NONZERO' | 'EVENODD'
@@ -17,8 +30,8 @@ export interface VectorVertex {
 export interface VectorSegment {
   start: number
   end: number
-  tangentStart: { x: number; y: number }
-  tangentEnd: { x: number; y: number }
+  tangentStart: Vector
+  tangentEnd: Vector
 }
 
 export interface VectorRegion {
@@ -56,7 +69,6 @@ export type NodeType =
   | 'CONNECTOR'
   | 'SHAPE_WITH_TEXT'
 
-import type { Color, Matrix, Rect } from './types'
 
 export type FillType =
   | 'SOLID'
@@ -123,7 +135,7 @@ export interface Stroke {
 export interface Effect {
   type: 'DROP_SHADOW' | 'INNER_SHADOW' | 'LAYER_BLUR' | 'BACKGROUND_BLUR' | 'FOREGROUND_BLUR'
   color: Color
-  offset: { x: number; y: number }
+  offset: Vector
   radius: number
   spread: number
   visible: boolean
@@ -158,10 +170,25 @@ export interface ArcData {
   innerRadius: number
 }
 
-export type LayoutMode = 'NONE' | 'HORIZONTAL' | 'VERTICAL'
+export type LayoutMode = 'NONE' | 'HORIZONTAL' | 'VERTICAL' | 'GRID'
 export type LayoutSizing = 'FIXED' | 'HUG' | 'FILL'
+
+export type GridTrackSizing = 'FIXED' | 'FR' | 'AUTO'
+
+export interface GridTrack {
+  sizing: GridTrackSizing
+  value: number
+}
+
+export interface GridPosition {
+  column: number
+  row: number
+  columnSpan: number
+  rowSpan: number
+}
 export type LayoutAlign = 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN'
 export type LayoutCounterAlign = 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'BASELINE'
+export type LayoutAlignSelf = 'AUTO' | 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'BASELINE'
 export type LayoutWrap = 'NO_WRAP' | 'WRAP'
 
 export interface SceneNode {
@@ -229,7 +256,7 @@ export interface SceneNode {
 
   layoutPositioning: 'AUTO' | 'ABSOLUTE'
   layoutGrow: number
-  layoutAlignSelf: 'AUTO' | 'STRETCH'
+  layoutAlignSelf: LayoutAlignSelf
 
   vectorNetwork: VectorNetwork | null
   fillGeometry: GeometryPath[]
@@ -256,6 +283,12 @@ export interface SceneNode {
 
   isMask: boolean
   maskType: MaskType
+
+  gridTemplateColumns: GridTrack[]
+  gridTemplateRows: GridTrack[]
+  gridColumnGap: number
+  gridRowGap: number
+  gridPosition: GridPosition | null
 
   counterAxisAlignContent: 'AUTO' | 'SPACE_BETWEEN'
   itemReverseZIndex: boolean
@@ -390,6 +423,11 @@ function createDefaultNode(type: NodeType, overrides: Partial<SceneNode> = {}): 
     maxHeight: null,
     isMask: false,
     maskType: 'ALPHA',
+    gridTemplateColumns: [],
+    gridTemplateRows: [],
+    gridColumnGap: 0,
+    gridRowGap: 0,
+    gridPosition: null,
     counterAxisAlignContent: 'AUTO',
     itemReverseZIndex: false,
     strokesIncludedInLayout: false,
@@ -426,7 +464,8 @@ export class SceneGraph {
   variableCollections = new Map<string, VariableCollection>()
   activeMode = new Map<string, string>()
   rootId: string
-  private absPosCache = new Map<string, { x: number; y: number }>()
+  readonly emitter: Emitter<SceneGraphEvents> = createNanoEvents()
+  private absPosCache = new Map<string, Vector>()
 
   constructor() {
     const root = createDefaultNode('FRAME', {
@@ -499,9 +538,18 @@ export class SceneGraph {
     const collection = this.variableCollections.get(collectionId)
     if (!collection) throw new Error(`Collection "${collectionId}" not found`)
     const id = generateId()
-    const defaultValue =
-      value ??
-      (type === 'COLOR' ? { ...BLACK } : type === 'FLOAT' ? 0 : type === 'BOOLEAN' ? false : '')
+    let defaultValue: VariableValue
+    if (value !== undefined) {
+      defaultValue = value
+    } else if (type === 'COLOR') {
+      defaultValue = { ...BLACK }
+    } else if (type === 'FLOAT') {
+      defaultValue = 0
+    } else if (type === 'BOOLEAN') {
+      defaultValue = false
+    } else {
+      defaultValue = ''
+    }
     const valuesByMode: Record<string, VariableValue> = {}
     for (const mode of collection.modes) {
       valuesByMode[mode.modeId] = structuredClone(defaultValue)
@@ -565,8 +613,7 @@ export class SceneGraph {
     if (!variable) return undefined
     const resolvedModeId = modeId ?? this.getActiveModeId(variable.collectionId)
     const value = variable.valuesByMode[resolvedModeId]
-    if (value === undefined) return undefined
-    if (typeof value === 'object' && value !== null && 'aliasId' in value) {
+    if (typeof value === 'object' && 'aliasId' in value) {
       const seen = visited ?? new Set<string>()
       seen.add(variableId)
       return this.resolveVariable(value.aliasId, undefined, seen)
@@ -576,7 +623,7 @@ export class SceneGraph {
 
   resolveColorVariable(variableId: string): Color | undefined {
     const value = this.resolveVariable(variableId)
-    if (value && typeof value === 'object' && 'r' in value) return value as Color
+    if (value && typeof value === 'object' && 'r' in value) return value
     return undefined
   }
 
@@ -633,7 +680,7 @@ export class SceneGraph {
     this.absPosCache.clear()
   }
 
-  getAbsolutePosition(id: string): { x: number; y: number } {
+  getAbsolutePosition(id: string): Vector {
     const cached = this.absPosCache.get(id)
     if (cached) return cached
 
@@ -671,6 +718,7 @@ export class SceneGraph {
       parent.childIds.push(node.id)
     }
 
+    this.emitter.emit('node:created', node)
     return node
   }
 
@@ -679,6 +727,7 @@ export class SceneGraph {
     if (!node) return
     this.absPosCache.clear()
     Object.assign(node, changes)
+    this.emitter.emit('node:updated', id, changes)
   }
 
   reparentNode(nodeId: string, newParentId: string): void {
@@ -691,6 +740,7 @@ export class SceneGraph {
     if (!newParent) return
     if (node.parentId === newParentId) return
 
+    const oldParentId = node.parentId
     this.absPosCache.clear()
 
     // Convert absolute position
@@ -713,6 +763,8 @@ export class SceneGraph {
     // Adjust position so node stays in same visual place
     node.x = absPos.x - newParentAbs.x
     node.y = absPos.y - newParentAbs.y
+
+    this.emitter.emit('node:reparented', nodeId, oldParentId, newParentId)
   }
 
   reorderChild(nodeId: string, parentId: string, insertIndex: number): void {
@@ -740,6 +792,8 @@ export class SceneGraph {
     node.parentId = parentId
     idx = Math.min(idx, newParent.childIds.length)
     newParent.childIds.splice(idx, 0, nodeId)
+
+    this.emitter.emit('node:reordered', nodeId, parentId, idx)
   }
 
   deleteNode(id: string): void {
@@ -758,6 +812,7 @@ export class SceneGraph {
     }
 
     this.nodes.delete(id)
+    this.emitter.emit('node:deleted', id)
   }
 
   hitTest(px: number, py: number, scopeId?: string): SceneNode | null {
@@ -779,6 +834,48 @@ export class SceneGraph {
     )
   }
 
+  private static containsPoint(
+    px: number,
+    py: number,
+    ax: number,
+    ay: number,
+    node: SceneNode
+  ): boolean {
+    return px >= ax && px <= ax + node.width && py >= ay && py <= ay + node.height
+  }
+
+  private hitTestOpaqueContainer(
+    px: number,
+    py: number,
+    child: SceneNode,
+    childId: string,
+    ax: number,
+    ay: number,
+    deep: boolean
+  ): SceneNode | null {
+    if (!SceneGraph.containsPoint(px, py, ax, ay, child)) return null
+    const childHit = this.hitTestChildren(px, py, childId, ax, ay, deep)
+    if (childHit) return child
+    if (SceneGraph.hasVisibleFillOrStroke(child)) return child
+    return null
+  }
+
+  private hitTestTransparentContainer(
+    px: number,
+    py: number,
+    child: SceneNode,
+    childId: string,
+    ax: number,
+    ay: number,
+    deep: boolean
+  ): SceneNode | null {
+    const deepHit = this.hitTestChildren(px, py, childId, ax, ay, deep)
+    if (deepHit) return deepHit
+    if (child.type === 'GROUP') return null
+    if (SceneGraph.containsPoint(px, py, ax, ay, child) && SceneGraph.hasVisibleFillOrStroke(child)) return child
+    return null
+  }
+
   private hitTestChildren(
     px: number,
     py: number,
@@ -791,12 +888,9 @@ export class SceneGraph {
     if (!parent) return null
 
     if (parent.clipsContent) {
-      if (px < offsetX || px > offsetX + parent.width || py < offsetY || py > offsetY + parent.height) {
-        return null
-      }
+      if (!SceneGraph.containsPoint(px, py, offsetX, offsetY, parent)) return null
     }
 
-    // Reverse order = topmost first
     for (let i = parent.childIds.length - 1; i >= 0; i--) {
       const childId = parent.childIds[i]
       const child = this.nodes.get(childId)
@@ -806,32 +900,18 @@ export class SceneGraph {
       const ay = offsetY + child.y
 
       if (CONTAINER_TYPES.has(child.type)) {
-        // Components/instances: don't recurse unless in deep mode (double-click).
-        // Still check fills — empty instances are click-through like frames.
         if (SceneGraph.OPAQUE_CONTAINER_TYPES.has(child.type) && !deep) {
-          if (px >= ax && px <= ax + child.width && py >= ay && py <= ay + child.height) {
-            const childHit = this.hitTestChildren(px, py, childId, ax, ay, deep)
-            if (childHit) return child
-            if (SceneGraph.hasVisibleFillOrStroke(child)) return child
-          }
+          const hit = this.hitTestOpaqueContainer(px, py, child, childId, ax, ay, deep)
+          if (hit) return hit
           continue
         }
 
-        const deepHit = this.hitTestChildren(px, py, childId, ax, ay, deep)
-        if (deepHit) return deepHit
-
-        // Groups are always click-through (only children are hittable).
-        // Frames/sections without visible fills or strokes are also click-through.
-        if (child.type === 'GROUP') continue
-        if (px >= ax && px <= ax + child.width && py >= ay && py <= ay + child.height) {
-          if (SceneGraph.hasVisibleFillOrStroke(child)) return child
-        }
+        const hit = this.hitTestTransparentContainer(px, py, child, childId, ax, ay, deep)
+        if (hit) return hit
         continue
       }
 
-      if (px >= ax && px <= ax + child.width && py >= ay && py <= ay + child.height) {
-        return child
-      }
+      if (SceneGraph.containsPoint(px, py, ax, ay, child)) return child
     }
     return null
   }
@@ -922,6 +1002,11 @@ export class SceneGraph {
     'paddingRight',
     'paddingBottom',
     'paddingLeft',
+    'gridTemplateColumns',
+    'gridTemplateRows',
+    'gridColumnGap',
+    'gridRowGap',
+    'gridPosition',
     'clipsContent',
     'independentStrokeWeights',
     'borderTopWeight',
@@ -930,13 +1015,23 @@ export class SceneGraph {
     'borderLeftWeight'
   ]
 
-  private static copyProp<K extends keyof SceneNode>(
+  private static copyProp(
     target: Partial<SceneNode> | SceneNode,
     source: SceneNode,
-    key: K
+    key: keyof SceneNode
   ): void {
     const val = source[key]
-    target[key] = (Array.isArray(val) ? structuredClone(val) : val) as SceneNode[K]
+    if (key === 'fills') {
+      ;(target as Record<string, unknown>)[key] = copyFills(val as Fill[])
+    } else if (key === 'strokes') {
+      ;(target as Record<string, unknown>)[key] = copyStrokes(val as Stroke[])
+    } else if (key === 'effects') {
+      ;(target as Record<string, unknown>)[key] = copyEffects(val as Effect[])
+    } else if (key === 'styleRuns') {
+      ;(target as Record<string, unknown>)[key] = copyStyleRuns(val as StyleRun[])
+    } else {
+      ;(target as Record<string, unknown>)[key] = Array.isArray(val) ? structuredClone(val) : val
+    }
   }
 
   createInstance(
@@ -945,7 +1040,7 @@ export class SceneGraph {
     overrides: Partial<SceneNode> = {}
   ): SceneNode | null {
     const component = this.nodes.get(componentId)
-    if (!component || component.type !== 'COMPONENT') return null
+    if (component?.type !== 'COMPONENT') return null
 
     const props: Partial<SceneNode> = { name: component.name, componentId }
     for (const key of SceneGraph.INSTANCE_SYNC_PROPS) {
@@ -988,7 +1083,7 @@ export class SceneGraph {
 
   syncInstances(componentId: string): void {
     const component = this.nodes.get(componentId)
-    if (!component || component.type !== 'COMPONENT') return
+    if (component?.type !== 'COMPONENT') return
 
     for (const instance of this.getInstances(componentId)) {
       // Sync instance-level props (unless overridden)
@@ -1070,7 +1165,7 @@ export class SceneGraph {
 
   detachInstance(instanceId: string): void {
     const node = this.nodes.get(instanceId)
-    if (!node || node.type !== 'INSTANCE') return
+    if (node?.type !== 'INSTANCE') return
     node.type = 'FRAME'
     node.componentId = null
     node.overrides = {}

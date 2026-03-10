@@ -8,6 +8,7 @@ import {
   PARENT_OUTLINE_DASH,
   DEFAULT_FONT_SIZE,
   LABEL_FONT_SIZE,
+  LABEL_OFFSET_Y,
   SIZE_FONT_SIZE,
   SECTION_TITLE_FONT_SIZE,
   SECTION_TITLE_HEIGHT,
@@ -31,10 +32,10 @@ import { RenderProfiler } from '../profiler'
 import type { SceneNode, SceneGraph, Fill, Stroke } from '../scene-graph'
 import type { SnapGuide } from '../snap'
 import type { TextEditor } from '../text-editor'
-import type { Color } from '../types'
-import type { Rect } from '../types'
-import type { Image as CKImage, Path } from 'canvaskit-wasm'
+import type { Color, Rect, Vector } from '../types'
 import type {
+  Image as CKImage,
+  Path,
   CanvasKit,
   Surface,
   Canvas,
@@ -45,7 +46,8 @@ import type {
   TypefaceFontProvider,
   SkPicture,
   ImageFilter,
-  MaskFilter
+  MaskFilter,
+  Paragraph
 } from 'canvaskit-wasm'
 
 import {
@@ -129,14 +131,14 @@ export interface RenderOverlays {
     direction: 'HORIZONTAL' | 'VERTICAL'
   } | null
   penState?: {
-    vertices: Array<{ x: number; y: number }>
+    vertices: Vector[]
     segments: Array<{
       start: number
       end: number
-      tangentStart: { x: number; y: number }
-      tangentEnd: { x: number; y: number }
+      tangentStart: Vector
+      tangentEnd: Vector
     }>
-    dragTangent: { x: number; y: number } | null
+    dragTangent: Vector | null
     closingToFirst: boolean
     cursorX?: number
     cursorY?: number
@@ -411,7 +413,7 @@ export class SkiaRenderer {
     this.fontsLoaded = true
     this.invalidateAllPictures()
 
-    ensureCJKFallback().then((family) => {
+    void ensureCJKFallback().then((family) => {
       if (family) this.invalidateAllPictures()
     })
   }
@@ -566,6 +568,47 @@ export class SkiaRenderer {
     return result
   }
 
+  hitTestFrameTitle(
+    graph: SceneGraph,
+    canvasX: number,
+    canvasY: number,
+    selectedIds: Set<string>
+  ): SceneNode | null {
+    if (!this.labelFont || selectedIds.size !== 1) return null
+
+    const id = [...selectedIds][0]
+    const node = graph.getNode(id)
+    if (node?.type !== 'FRAME') return null
+
+    const parent = node.parentId ? graph.getNode(node.parentId) : null
+    const isTopLevel = !parent || parent.type === 'CANVAS' || parent.type === 'SECTION'
+    if (!isTopLevel) return null
+
+    const abs = graph.getAbsolutePosition(id)
+    const font = this.labelFont
+    const glyphIds = font.getGlyphIDs(node.name)
+    const widths = font.getGlyphWidths(glyphIds)
+    let textW = 0
+    for (const w of widths) textW += w
+
+    const labelW = textW / this.zoom
+    const labelH = LABEL_FONT_SIZE / this.zoom
+    const gap = LABEL_OFFSET_Y / this.zoom
+    const labelX = abs.x
+    const labelY = abs.y - gap - labelH
+
+    if (
+      canvasX >= labelX &&
+      canvasX <= labelX + labelW &&
+      canvasY >= labelY &&
+      canvasY <= labelY + labelH
+    ) {
+      return node
+    }
+
+    return null
+  }
+
   renderSceneToCanvas(canvas: Canvas, graph: SceneGraph, pageId: string): void {
     const prevViewport = this.worldViewport
     this.worldViewport = { x: -1e9, y: -1e9, w: 2e9, h: 2e9 }
@@ -702,7 +745,7 @@ export class SkiaRenderer {
     this.worldViewport = prevViewport
     this.scenePictureVersion = sceneVersion
     this.scenePicturePageId = this.pageId
-    canvas.drawPicture(this.scenePicture!)
+    canvas.drawPicture(this.scenePicture)
   }
 
   invalidateVectorPath(nodeId: string): void {
@@ -720,12 +763,18 @@ export class SkiaRenderer {
     }
   }
 
-  measureTextNode(node: SceneNode): { width: number; height: number } | null {
+  measureTextNode(node: SceneNode, maxWidth?: number): { width: number; height: number } | null {
     if (!this.fontsLoaded || !this.fontProvider || !this.isNodeFontLoaded(node)) return null
     if (node.type !== 'TEXT' || !node.text) return null
 
     const paragraph = this.buildParagraph(node)
-    paragraph.layout(node.textAutoResize === 'WIDTH_AND_HEIGHT' ? 1e6 : node.width || 1e6)
+    const layoutWidth =
+      maxWidth !== undefined
+        ? maxWidth
+        : (node.textAutoResize === 'WIDTH_AND_HEIGHT'
+            ? 1e6
+            : node.width || 1e6)
+    paragraph.layout(layoutWidth)
     const width = paragraph.getLongestLine()
     const height = paragraph.getHeight()
     paragraph.delete()
@@ -766,22 +815,13 @@ export class SkiaRenderer {
     node: SceneNode,
     color?: Float32Array,
     { halfLeading = false }: { halfLeading?: boolean } = {}
-  ): import('canvaskit-wasm').Paragraph {
+  ): Paragraph {
     const ck = this.ck
     const baseColor = color ?? ck.BLACK
     const baseFontSize = node.fontSize || DEFAULT_FONT_SIZE
     const cjkFallback = getCJKFallbackFamily()
 
-    const truncateOpts: { maxLines?: number; ellipsis?: string } = {}
-    if (node.textTruncation === 'ENDING') {
-      if (node.maxLines != null && node.maxLines > 0) {
-        truncateOpts.maxLines = node.maxLines
-      } else if (node.height > 0) {
-        const lineH = node.lineHeight || baseFontSize * 1.2
-        truncateOpts.maxLines = Math.max(1, Math.floor(node.height / lineH))
-      }
-      truncateOpts.ellipsis = '…'
-    }
+    const truncateOpts = this.buildTruncateOpts(node, baseFontSize)
 
     const fontFamilies = (primary: string) =>
       cjkFallback ? [primary, cjkFallback] : [primary]
@@ -805,49 +845,78 @@ export class SkiaRenderer {
     })
 
     const builder = ck.ParagraphBuilder.MakeFromFontProvider(paraStyle, this.fontProvider!)
-    const runs = node.styleRuns
-    const text = node.text
 
-    if (runs.length === 0) {
-      builder.addText(text)
+    if (node.styleRuns.length === 0) {
+      builder.addText(node.text)
     } else {
-      let pos = 0
-      for (const run of runs) {
-        if (pos < run.start) {
-          builder.addText(text.slice(pos, run.start))
-        }
-        const s = run.style
-        builder.pushStyle(
-          new ck.TextStyle({
-            color: baseColor,
-            fontFamilies: fontFamilies(s.fontFamily ?? (node.fontFamily || DEFAULT_FONT_FAMILY)),
-            fontSize: s.fontSize ?? baseFontSize,
-            fontStyle: {
-              weight: { value: (s.fontWeight ?? node.fontWeight) || 400 } as FontWeight,
-              slant: (s.italic ?? node.italic) ? ck.FontSlant.Italic : ck.FontSlant.Upright
-            },
-            letterSpacing: s.letterSpacing ?? (node.letterSpacing || 0),
-            decoration: this.textDecorationValue(s.textDecoration ?? node.textDecoration),
-            heightMultiplier: (s.lineHeight !== undefined ? s.lineHeight : node.lineHeight)
-              ? (s.lineHeight !== undefined ? s.lineHeight : node.lineHeight)! /
-                (s.fontSize ?? baseFontSize)
-              : undefined,
-            halfLeading
-          })
-        )
-        builder.addText(text.slice(run.start, run.start + run.length))
-        builder.pop()
-        pos = run.start + run.length
-      }
-      if (pos < text.length) {
-        builder.addText(text.slice(pos))
-      }
+      this.addStyledRuns(builder, node, baseColor, baseFontSize, fontFamilies, halfLeading)
     }
 
     const paragraph = builder.build()
     paragraph.layout(node.width || 1e6)
     builder.delete()
     return paragraph
+  }
+
+  private buildTruncateOpts(
+    node: SceneNode,
+    baseFontSize: number
+  ): { maxLines?: number; ellipsis?: string } {
+    if (node.textTruncation !== 'ENDING') return {}
+
+    const opts: { maxLines?: number; ellipsis: string } = { ellipsis: '…' }
+    if (node.maxLines != null && node.maxLines > 0) {
+      opts.maxLines = node.maxLines
+    } else if (node.height > 0) {
+      const lineH = node.lineHeight || baseFontSize * 1.2
+      opts.maxLines = Math.max(1, Math.floor(node.height / lineH))
+    }
+    return opts
+  }
+
+  private addStyledRuns(
+    builder: ReturnType<CanvasKit['ParagraphBuilder']['MakeFromFontProvider']>,
+    node: SceneNode,
+    baseColor: Float32Array,
+    baseFontSize: number,
+    fontFamilies: (primary: string) => string[],
+    halfLeading: boolean
+  ): void {
+    const ck = this.ck
+    const text = node.text
+    let pos = 0
+
+    for (const run of node.styleRuns) {
+      if (pos < run.start) {
+        builder.addText(text.slice(pos, run.start))
+      }
+      const s = run.style
+      const runLineHeight = s.lineHeight !== undefined ? s.lineHeight : node.lineHeight
+      const runFontSize = s.fontSize ?? baseFontSize
+
+      builder.pushStyle(
+        new ck.TextStyle({
+          color: baseColor,
+          fontFamilies: fontFamilies(s.fontFamily ?? (node.fontFamily || DEFAULT_FONT_FAMILY)),
+          fontSize: runFontSize,
+          fontStyle: {
+            weight: { value: (s.fontWeight ?? node.fontWeight) || 400 } as FontWeight,
+            slant: (s.italic ?? node.italic) ? ck.FontSlant.Italic : ck.FontSlant.Upright
+          },
+          letterSpacing: s.letterSpacing ?? (node.letterSpacing || 0),
+          decoration: this.textDecorationValue(s.textDecoration ?? node.textDecoration),
+          heightMultiplier: runLineHeight ? runLineHeight / runFontSize : undefined,
+          halfLeading
+        })
+      )
+      builder.addText(text.slice(run.start, run.start + run.length))
+      builder.pop()
+      pos = run.start + run.length
+    }
+
+    if (pos < text.length) {
+      builder.addText(text.slice(pos))
+    }
   }
 
   private textDecorationValue(decoration: string): number {
@@ -897,7 +966,7 @@ export class SkiaRenderer {
     return stroke.color
   }
 
-  screenToCanvas(sx: number, sy: number): { x: number; y: number } {
+  screenToCanvas(sx: number, sy: number): Vector {
     return {
       x: (sx - this.panX) / this.zoom,
       y: (sy - this.panY) / this.zoom
@@ -941,11 +1010,11 @@ export class SkiaRenderer {
     this.penVertexFill.delete()
     this.penVertexStroke.delete()
     this.effectLayerPaint.delete()
-    for (const filter of this.imageFilterCache.values()) filter?.delete()
+    for (const filter of this.imageFilterCache.values()) filter.delete()
     this.imageFilterCache.clear()
-    for (const filter of this.maskFilterCache.values()) filter?.delete()
+    for (const filter of this.maskFilterCache.values()) filter.delete()
     this.maskFilterCache.clear()
-    for (const pic of this.nodePictureCache.values()) pic?.delete()
+    for (const pic of this.nodePictureCache.values()) pic.delete()
     this.nodePictureCache.clear()
     this.scenePicture?.delete()
     this._flashPaint?.delete()
@@ -984,7 +1053,7 @@ export class SkiaRenderer {
     drawGroupBoundsFn(this, canvas, nodes, graph)
   }
 
-  getRotatedCorners(n: SceneNode, abs: { x: number; y: number }): Array<{ x: number; y: number }> {
+  getRotatedCorners(n: SceneNode, abs: Vector): Vector[] {
     return getRotatedCornersFn(this, n, abs)
   }
 

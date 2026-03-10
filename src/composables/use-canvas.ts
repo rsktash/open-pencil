@@ -1,8 +1,7 @@
 import { useBreakpoints, useRafFn, useResizeObserver } from '@vueuse/core'
 import { onMounted, onUnmounted, type Ref } from 'vue'
 
-import { getCanvasKit, getGpuBackend } from '@open-pencil/core'
-import { SkiaRenderer } from '@open-pencil/core'
+import { getCanvasKit, getGpuBackend, SkiaRenderer } from '@open-pencil/core'
 
 import type { EditorStore } from '@/stores/editor'
 import type { CanvasKit } from 'canvaskit-wasm'
@@ -32,6 +31,7 @@ async function initWebGPU(ck: CanvasKit): Promise<WebGPUContext | null> {
   const adapter = await navigator.gpu.requestAdapter()
   if (!adapter) return null
   const device = await adapter.requestDevice()
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- WebGPU CanvasKit API may not exist at runtime
   const deviceContext = asWebGPU(ck).MakeGPUDeviceContext?.(device)
   if (!deviceContext) return null
   return { device, deviceContext }
@@ -52,6 +52,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>, store: Edito
     if (!canvas || destroyed) return
 
     ck = await getCanvasKit()
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- async race: destroyed may change during await
     if (destroyed) return
 
     if (getGpuBackend() === 'webgpu') {
@@ -118,10 +119,10 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>, store: Edito
       }
     }
 
-    const glCtx = (canvas.getContext('webgl2') ?? null) as WebGL2RenderingContext | null
+    const glCtx = canvas.getContext('webgl2') ?? null
     renderer = new SkiaRenderer(ck, surface, glCtx)
     store.setCanvasKit(ck, renderer)
-    renderer.loadFonts().then(() => renderNow())
+    void renderer.loadFonts().then(() => renderNow())
     renderNow()
     canvas.dataset.ready = '1'
   }
@@ -184,7 +185,7 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>, store: Edito
   })
 
   onMounted(() => {
-    init()
+    void init()
   })
 
   onUnmounted(() => {
@@ -230,11 +231,18 @@ export function useCanvas(canvasRef: Ref<HTMLCanvasElement | null>, store: Edito
     return renderer?.hitTestComponentLabel(store.graph, canvasX, canvasY) ?? null
   }
 
+  function hitTestFrameTitle(canvasX: number, canvasY: number) {
+    return (
+      renderer?.hitTestFrameTitle(store.graph, canvasX, canvasY, store.state.selectedIds) ?? null
+    )
+  }
+
   return {
     render: () => {
       dirty = true
     },
     hitTestSectionTitle,
-    hitTestComponentLabel
+    hitTestComponentLabel,
+    hitTestFrameTitle
   }
 }

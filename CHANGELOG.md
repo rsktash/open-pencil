@@ -1,30 +1,74 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — 2026-03-09
 
 ### Features
 
-- MCP live desktop mode — `openpencil-mcp --app desktop` can now proxy tool calls into an already opened OpenPencil desktop app instance through the local automation bridge
-- Figma-targeted export — new `Export for Figma…` action and CLI `bun open-pencil export file.fig --format fig --target figma` generate a Figma-oriented `.fig` that flattens layout/component semantics for better import fidelity without changing OpenPencil’s native save format
+- XPath query command — `open-pencil query design.fig "//FRAME[@width < 300]"` to find nodes by type, attributes, and tree structure using XPath selectors
+- CSS Grid layout mode — select a frame, click the grid icon in the auto layout toolbar to switch from flex to grid. Configure column/row tracks (fr, fixed px, auto), column and row gaps, and per-side padding. Powered by a [Yoga fork](https://github.com/open-pencil/yoga/tree/grid) with cherry-picked CSS Grid PRs from upstream
+- JSX and Tailwind CSS export for grid layouts — `grid grid-cols-N`, `gap-x-*`/`gap-y-*`, child `col-start-*`/`row-start-*`/`col-span-*`/`row-span-*`
+- Multi-provider AI support — connect to Anthropic, OpenAI, Google AI, or any OpenAI-compatible endpoint directly, in addition to OpenRouter. Per-provider API key storage, provider settings popover, automatic migration from single OpenRouter key
+- Anthropic-compatible provider for custom API endpoints
+- New AI tools: `get_jsx` (JSX roundtrip view), `diff_jsx` (structural diff), `describe` (semantic role, visual style, layout, design issues)
+- AI visual verification — `export_image` returns image content to the model for vision-based review
+- API type toggle (Completions/Responses) for OpenAI-compatible providers
+- Figma zoom shortcuts — ⌘0 (100%), ⌘1 (zoom to fit), ⌘2 (zoom to selection), ⇧1/⇧2 alternatives
+- XPath query tool — `query_nodes` for AI/MCP with attribute selectors, tree traversal, and type filtering
+
+### Fixes
+
+- Serialize variables, collections, and bindings to `.fig` files — previously lost on save (#65)
+- Text nodes created via MCP now render in Figma — emit `derivedTextData` with font metadata and layout size (#64)
+- Double-click on layer tree no longer toggles expand/collapse — use the chevron instead
+- Page rename input matches layer rename styling
+- Fix `w="fill"`/`h="fill"` in JSX renderer — now direction-aware based on parent flex axis
+- Fix text auto-resize defaulting to fixed 100×100 — text without explicit width uses `WIDTH_AND_HEIGHT`
+- Fix `clipsContent` not propagated to Yoga — frames with clip enabled now set `Overflow.Hidden`
+- Fix `COUNTER_ALIGN_MAP` mapping stretch to `MIN` instead of `STRETCH`
+- Fix JSX export omitting x/y for absolute-positioned children
+- Fix JSX export ignoring `textAutoResize` for text sizing
+- Fix drag terminating on mouseleave — drags now continue outside the canvas
+- Fix `export_image` stack overflow on large nodes — chunked base64 encoding
+- Undo support for auto-layout reorder, layer tree reorder, and drag reparent
+- Page snapshot undo for AI tool mutations
+- Fix collab sync for same-parent reorder — `node:reordered` events now propagated to Yjs peers
+- Fix orphaned instances on clipboard paste — detach to FRAME when component is missing
+- Fix text typography lost on Figma clipboard import — preserve fontFamily, fontWeight, fontSize, lineHeight
+- Fix `copyFill` missing `gradientTransform` and `imageTransform` — gradient fills now round-trip correctly
+
+
+### Performance
+
+- Event-driven rendering and component sync — `SceneGraph` emits typed events on mutations; `requestRender()` calls reduced from 94 to 22, component instance sync uses microtask batching with deduplication
+- Replace `structuredClone` with typed copy helpers for fills, strokes, effects, and style runs (~24× faster in hot paths)
+- Filter .fig unzip to only decompress canvas and image entries, skipping metadata cruft
+
 
 ### Improvements
 
-- AI chat subagent budget selector — local CLI backends now expose a persisted `1x` to `5x` execution budget in the chat footer, with higher counts switching the CLI prompt into coordinator-plus-workers task decomposition mode
-- Split local and CI Tauri config — local `bun run tauri ...` now uses the base unsigned config with an optional untracked `desktop/tauri.local.conf.json` override, while GitHub builds layer `desktop/tauri.ci.conf.json` for signing-only settings
-- Dirty document close guard — closing a tab or app window with unsaved `.fig` changes now asks whether to save, discard, or cancel before the document is closed
-- Desktop startup restore — the app now reopens the most recently used `.fig` file on launch when starting into a fresh untitled tab
+- Padding on a frame auto-enables vertical auto-layout
+- AI tools run `computeAllLayouts` after execution — layout updates immediately
+- Enhanced AI system prompt with full JSX prop reference and verification workflow
+- Chat panel preserves messages when toggling UI visibility
+- SceneGraph event bus (nanoevents) — `node:created`, `node:updated`, `node:deleted`, `node:reparented`, `node:reordered` events replace monkey-patching in collab sync and manual render invalidation
+- Replace esbuild-wasm (14 MB) with sucrase (201 KB) for JSX transform — `buildComponent()` and `renderJSX()` now synchronous and browser-compatible
+- `useMagicKeys` keyboard shortcut system — replaces tinykeys with VueUse built-in, cross-platform Meta/Control handling, modifier exclusion for combo conflicts
+- Dev-only debug toolbar for copying chat logs
+- Auto-layout icons in layer tree — vertical (rows), horizontal (columns), and grid icons for auto-layout frames; components keep their purple diamond
+- Frame titles on canvas are now draggable — clicking a selected top-level frame's name label starts a drag
+- Compact layout controls — icon-based gap (↔/↕) and padding (T/R/B/L) inputs instead of text labels
+- Auto-detect horizontal vs vertical direction when wrapping in auto layout (Shift+A)
+- Fix alignment grid for vertical layouts — visual positions now match spatial axes
+- Fix grid switch from HUG-sized frames — frame expands to fit children
+- Remove unwanted white fill when wrapping in auto layout
 
 ## 0.8.0 — 2026-03-07
 
 ### Features
 
 - Mobile layout & PWA — responsive editor with touch-optimized toolbar, swipeable bottom drawer (layers/properties/design/code), HUD overlay, and installable PWA with icons and service worker
-- AI screenshot capture — new `take_screenshot` tool lets the built-in agent capture the current page, selection, or explicit nodes for visual comparison against reference attachments, with a screenshot-style shimmer highlight in the editor during capture
 - Tailwind CSS v4 JSX export — export selections as HTML with Tailwind utility classes (`<div className="flex gap-4 p-3">`) from the Code panel, CLI (`bun open-pencil export --format jsx --style tailwind`), or programmatically via `sceneNodeToJSX(id, graph, 'tailwind')`. Supports layout, sizing, colors, border radius, opacity, rotation, overflow, shadows, blur, and typography. Uses v4 spacing semantics (px/4 multiplier) with automatic fallback to arbitrary values.
 - Code panel format toggle — switch between OpenPencil (custom components) and Tailwind (HTML + utility classes) output
-- AI chat attachments — attach local files in the composer and paste clipboard images directly into the built-in chat for multimodal prompts
-- Direct OpenAI Codex backend — the built-in chat now supports provider-aware model routing, with curated OpenRouter models plus direct OpenAI Codex selection
-- Desktop CLI backends — experimental Claude Code CLI and Codex CLI sessions can now drive the built-in chat through desktop bridge-backed OpenPencil tool calls, including real-time response/tool streaming, JSX `render` via a staged helper script, and stop/cancel support
 - Homebrew tap — `brew install open-pencil/tap/open-pencil` for macOS (arm64 + x64), auto-updated on each release
 - Double-click to rename layers — inline rename in layer panel, shared `useInlineRename` composable
 - New AI/MCP tools: `analyze_colors`, `analyze_typography`, `analyze_spacing`, `analyze_clusters`, `diff_create`, `diff_show`, `get_components`, `get_current_page`, `arrange`, `node_to_component`
@@ -33,13 +77,7 @@
 
 ### Improvements
 
-- File menu now includes Open Recent on desktop, backed by a persisted local list of recently opened or saved `.fig` files
 - Refactor mobile drawer tabs, layout sizing dropdowns, and inline rename to use Reka UI primitives
-- AI model selector groups models by integration (Codex CLI, Claude Code CLI, OpenAI, Open Router) and exposes per-CLI model variants
-- AI chat prompt history — submitted prompts are stored locally and can be recalled in the composer with ↑/↓
-- AI chat history restore — prior conversations are restored locally when reopening the app or reloading the editor
-- AI chat drag-and-drop — files can now be dropped directly onto the composer to attach them to the next prompt, with a visible drop target state
-- Native CLI session continuity — Claude Code CLI and Codex CLI now continue their own session history between turns, lock the model picker to the active CLI backend on restore, and expose a New session reset in the chat UI
 - Add shared UI style helpers with tailwind-variants for menus, selects, buttons, and surfaces
 - Unified tool definitions — define once in `packages/core/src/tools/`, automatically available in AI chat, CLI, and MCP
 - Harden FigmaAPI — hide internals via Symbols, freeze arrays, fix `layoutSizing`, 30+ new properties and methods
@@ -52,16 +90,6 @@
 
 ### Fixes
 
-- Fix Figma-target font style serialization — exported `.fig` files now write Figma-compatible style names like `Regular`, `Semi Bold`, and `Extra Bold` instead of OpenPencil’s internal compact names, reducing missing/ignored text on Figma import
-- Fix desktop CLI backend discovery on macOS and Windows app launches — Codex CLI and Claude Code CLI now resolve binaries from common user/Homebrew/npm install paths even when the app PATH is limited
-- Fix AI chat attachment submission — pasted images and attached files now normalize to SDK file parts before send, and Codex CLI temp-directory runs skip the git repo trust check
-- Improve AI chat transcript structure — assistant text is now split around tool activity instead of being merged into one block, and live thinking steps appear inline while the response is still being generated
-- Reduce screenshot attachment overhead — pasted/uploaded images are downscaled and recompressed before send, and restored chat history now stores lightweight attachment placeholders instead of raw base64 image payloads
-- Fix restored CLI chat sessions on first open/reply — stored chat history is now normalized on load, chat initialization is deferred until the AI panel is actually opened, and assistant transcript text renders without the unstable markdown parser that was causing runtime toasts on restore
-- Fix desktop CLI chat progress — Codex now runs with bridge-capable local access, Claude/Codex use structured streaming for partial assistant output, and the chat no longer replays internal CLI shell steps as user-facing tool calls
-- Fix Codex progress parsing — the chat now accepts current Codex JSONL `item_type` / `assistant_message` event variants so interim technical status text does not disappear from the transcript
-- Fix desktop automation bridge ownership in Tauri dev — the Vite dev server now skips its local bridge when launched via `bun run tauri dev`, avoiding the `127.0.0.1:7600` port collision and false “OpenPencil app is not connected” tool failures
-- Fix desktop Open Recent watcher errors — reopened files now continue loading even if filesystem watch setup fails, and Tauri watch permission scope explicitly allows reopening files outside the app bundle
 - Fix drawer animation jump on close — single spring transition instead of two-phase
 - Fix `ALL_TOOLS` registry missing newer tools (`analyzeColors`, `diffCreate`, `exportImage`, `arrangeNodes`)
 - Fix `renderJSX` typo in tool definitions (`renderJsx` → `renderJSX`)

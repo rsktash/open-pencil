@@ -98,18 +98,119 @@ export const TEXT_CARET_COLOR = BLACK
 export const TEXT_CARET_WIDTH = 1
 
 export type AIBackendId = 'openrouter' | 'openai' | 'claude-code' | 'codex-cli'
+export type AIProviderID =
+  | 'openrouter'
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'openai-compatible'
+  | 'anthropic-compatible'
 
 export interface ModelOption {
   id: string
   name: string
-  provider: string
-  backend: AIBackendId
-  model: string
+  provider?: string
+  backend?: AIBackendId
+  model?: string
   tag?: string
 }
 
+export interface AIProviderDef {
+  id: AIProviderID
+  name: string
+  keyPlaceholder: string
+  keyURL: string
+  models: ModelOption[]
+  defaultModel: string
+  supportsCustomBaseURL?: boolean
+  supportsCustomModel?: boolean
+}
+
+export const AI_PROVIDERS: AIProviderDef[] = [
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    keyPlaceholder: 'sk-or-…',
+    keyURL: 'https://openrouter.ai/keys',
+    defaultModel: 'anthropic/claude-sonnet-4.6',
+    models: [
+      { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', tag: 'Best for design' },
+      { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', tag: 'Smartest' },
+      { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5', tag: 'Vision + code' },
+      {
+        id: 'google/gemini-3.1-pro-preview',
+        name: 'Gemini 3.1 Pro',
+        tag: '1M context'
+      },
+      { id: 'openai/gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+      { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash', tag: 'Fast' },
+      { id: 'deepseek/deepseek-v3.2', name: 'DeepSeek V3.2', tag: 'Cheap' },
+      { id: 'qwen/qwen3.5-flash-02-23', name: 'Qwen 3.5 Flash', tag: 'Cheap' },
+      { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder', tag: 'Free' },
+      { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', tag: 'Free' }
+    ]
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    keyPlaceholder: 'sk-ant-…',
+    keyURL: 'https://console.anthropic.com/settings/keys',
+    defaultModel: 'claude-sonnet-4-6-20260301',
+    models: [
+      { id: 'claude-sonnet-4-6-20260301', name: 'Claude Sonnet 4.6', tag: 'Best for design' },
+      { id: 'claude-opus-4-6-20260301', name: 'Claude Opus 4.6', tag: 'Smartest' }
+    ]
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    keyPlaceholder: 'sk-…',
+    keyURL: 'https://platform.openai.com/api-keys',
+    defaultModel: 'gpt-5.3-codex',
+    models: [
+      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+      { id: 'gpt-4.1', name: 'GPT-4.1' },
+      { id: 'o3', name: 'o3', tag: 'Reasoning' },
+      { id: 'o4-mini', name: 'o4-mini', tag: 'Fast reasoning' }
+    ]
+  },
+  {
+    id: 'google',
+    name: 'Google AI',
+    keyPlaceholder: 'AIza…',
+    keyURL: 'https://aistudio.google.com/apikey',
+    defaultModel: 'gemini-3.1-pro-preview',
+    models: [
+      { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', tag: '1M context' },
+      { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tag: 'Fast' }
+    ]
+  },
+  {
+    id: 'openai-compatible',
+    name: 'OpenAI-compatible',
+    keyPlaceholder: 'API key',
+    keyURL: '',
+    defaultModel: '',
+    models: [],
+    supportsCustomBaseURL: true,
+    supportsCustomModel: true
+  },
+  {
+    id: 'anthropic-compatible',
+    name: 'Anthropic-compatible',
+    keyPlaceholder: 'API key',
+    keyURL: '',
+    defaultModel: '',
+    models: [],
+    supportsCustomBaseURL: true,
+    supportsCustomModel: true
+  }
+]
+
+export const DEFAULT_AI_PROVIDER: AIProviderID = 'openrouter'
+export const DEFAULT_AI_MODEL = AI_PROVIDERS[0].defaultModel
+
 export const AI_MODELS: ModelOption[] = [
-  // Best for design: vision + frontend + tool calling (WebDev Arena #1, DesignBench, SWE-bench 79.6%)
   {
     id: 'openrouter::anthropic/claude-sonnet-4.6',
     name: 'Claude Sonnet 4.6',
@@ -126,7 +227,6 @@ export const AI_MODELS: ModelOption[] = [
     model: 'anthropic/claude-opus-4.6',
     tag: 'Smartest'
   },
-  // 76.8% SWE-bench, vision + UI-to-code specialist
   {
     id: 'openrouter::moonshotai/kimi-k2.5',
     name: 'Kimi K2.5',
@@ -135,7 +235,6 @@ export const AI_MODELS: ModelOption[] = [
     model: 'moonshotai/kimi-k2.5',
     tag: 'Vision + code'
   },
-  // 1M context, multimodal (text+image+audio+video), 78% SWE-bench
   {
     id: 'openrouter::google/gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro',
@@ -144,7 +243,6 @@ export const AI_MODELS: ModelOption[] = [
     model: 'google/gemini-3.1-pro-preview',
     tag: '1M context'
   },
-  // Direct Codex API access without routing through OpenRouter
   {
     id: 'openai::gpt-5.3-codex',
     name: 'GPT-5.3 Codex',
@@ -181,8 +279,6 @@ export const AI_MODELS: ModelOption[] = [
     backend: 'claude-code',
     model: 'claude-opus-4-6'
   },
-
-  // Fast & cheap
   {
     id: 'openrouter::google/gemini-3-flash-preview',
     name: 'Gemini 3 Flash',
@@ -207,8 +303,6 @@ export const AI_MODELS: ModelOption[] = [
     model: 'qwen/qwen3.5-flash-02-23',
     tag: 'Cheap'
   },
-
-  // Free (with tool calling)
   {
     id: 'openrouter::qwen/qwen3-coder:free',
     name: 'Qwen3 Coder',
@@ -226,9 +320,6 @@ export const AI_MODELS: ModelOption[] = [
     tag: 'Free'
   }
 ]
-
-export const DEFAULT_AI_MODEL =
-  AI_MODELS.find((model) => model.backend === 'openrouter')?.id ?? AI_MODELS[0].id
 
 export const AUTOMATION_HTTP_PORT = 7600
 export const AUTOMATION_WS_PORT = 7601

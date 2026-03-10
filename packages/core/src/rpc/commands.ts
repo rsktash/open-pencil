@@ -1,10 +1,11 @@
 import { colorToHex, colorDistance as colorDist } from '../color'
+import { queryByXPath } from '../xpath'
 import type { Color } from '../types'
 import type { SceneGraph, SceneNode, Variable } from '../scene-graph'
 
 export interface RpcCommand<A = unknown, R = unknown> {
   name: string
-  execute: (graph: SceneGraph, args: A) => R
+  execute: (graph: SceneGraph, args: A) => R | Promise<R>
 }
 
 /** Walk descendants. Callback returns `false` to stop traversal. */
@@ -192,6 +193,47 @@ export const findCommand: RpcCommand<FindArgs, FindNodeResult[]> = {
   }
 }
 
+// ── query (xpath) ──
+
+export interface QueryArgs {
+  selector: string
+  page?: string
+  limit?: number
+}
+
+export interface QueryNodeResult {
+  id: string
+  name: string
+  type: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export const queryCommand: RpcCommand<QueryArgs, QueryNodeResult[] | { error: string }> = {
+  name: 'query',
+  execute: async (graph, args) => {
+    try {
+      const nodes = await queryByXPath(graph, args.selector, {
+        page: args.page,
+        limit: args.limit
+      })
+      return nodes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        x: Math.round(n.x),
+        y: Math.round(n.y),
+        width: Math.round(n.width),
+        height: Math.round(n.height)
+      }))
+    } catch (err) {
+      return { error: `XPath error: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  }
+}
+
 // ── node ──
 
 export interface NodeArgs {
@@ -259,7 +301,7 @@ export const nodeCommand: RpcCommand<NodeArgs, NodeResult | { error: string }> =
       fontFamily: node.fontFamily,
       fontSize: node.fontSize,
       fontWeight: node.fontWeight,
-      text: node.text?.length ? (node.text.length > 200 ? node.text.slice(0, 200) + '…' : node.text) : null,
+      text: node.text.length ? (node.text.length > 200 ? node.text.slice(0, 200) + '…' : node.text) : null,
       parent: parent ? { id: parent.id, name: parent.name, type: parent.type } : null,
       children: node.childIds.length,
       boundVariables: boundVars
@@ -277,15 +319,14 @@ export interface VariablesArgs {
 function formatVariableValue(variable: Variable, graph: SceneGraph): string {
   const modeId = graph.getActiveModeId(variable.collectionId)
   const raw = variable.valuesByMode[modeId]
-  if (raw === undefined) return '–'
 
-  if (typeof raw === 'object' && raw !== null && 'aliasId' in raw) {
-    const alias = graph.variables.get((raw as { aliasId: string }).aliasId)
-    return alias ? `→ ${alias.name}` : `→ ${(raw as { aliasId: string }).aliasId}`
+  if (typeof raw === 'object' && 'aliasId' in raw) {
+    const alias = graph.variables.get(raw.aliasId)
+    return alias ? `→ ${alias.name}` : `→ ${raw.aliasId}`
   }
 
-  if (typeof raw === 'object' && raw !== null && 'r' in raw) {
-    return colorToHex(raw as Color).toLowerCase()
+  if (typeof raw === 'object' && 'r' in raw) {
+    return colorToHex(raw).toLowerCase()
   }
 
   return String(raw)
@@ -610,6 +651,7 @@ export const ALL_RPC_COMMANDS = [
   pagesCommand,
   treeCommand,
   findCommand,
+  queryCommand,
   nodeCommand,
   variablesCommand,
   analyzeColorsCommand,

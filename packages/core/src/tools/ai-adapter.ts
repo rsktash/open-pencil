@@ -10,13 +10,13 @@ import {
   extractCaptureHighlight,
   extractHighlightedNodeIds
 } from './schema'
-
 import type { ToolCaptureHighlight, ToolDef, ParamDef, ParamType } from './schema'
+import type * as valibot from 'valibot'
 
 export interface AIAdapterOptions {
   getFigma: () => FigmaAPI
-  onBeforeExecute?: () => void
-  onAfterExecute?: () => void
+  onBeforeExecute?: (def: ToolDef) => void
+  onAfterExecute?: (def: ToolDef) => void
   onFlashNodes?: (nodeIds: string[]) => void
   onCaptureHighlight?: (highlight: ToolCaptureHighlight) => void
 }
@@ -25,7 +25,7 @@ export function toolsToAI(
   tools: ToolDef[],
   options: AIAdapterOptions,
   deps: {
-    v: typeof import('valibot')
+    v: typeof valibot
     valibotSchema: (schema: any) => any
     tool: (opts: any) => any
   }
@@ -39,11 +39,11 @@ export function toolsToAI(
       shape[key] = paramToValibot(v, param)
     }
 
-    result[def.name] = tool({
+    const toolOpts: Record<string, unknown> = {
       description: def.description,
       inputSchema: valibotSchema(v.object(shape as any)),
       execute: async (args: Record<string, unknown>) => {
-        options.onBeforeExecute?.()
+        options.onBeforeExecute?.(def)
         try {
           const execResult = await def.execute(options.getFigma(), args as any)
           const highlightedIds = extractHighlightedNodeIds(execResult)
@@ -61,17 +61,34 @@ export function toolsToAI(
             options.onFlashNodes(highlightedIds)
           }
           return execResult
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) }
         } finally {
-          options.onAfterExecute?.()
+          options.onAfterExecute?.(def)
         }
       }
-    })
+    }
+
+    if (def.name === 'export_image') {
+      toolOpts.toModelOutput = ({ output }: { output: unknown }) => {
+        if (output && typeof output === 'object' && 'base64' in output && 'mimeType' in output) {
+          const r = output as { base64: string; mimeType: string }
+          return {
+            type: 'content' as const,
+            value: [{ type: 'media' as const, mediaType: r.mimeType, data: r.base64 }]
+          }
+        }
+        return { type: 'json' as const, value: output as Record<string, unknown> }
+      }
+    }
+
+    result[def.name] = tool(toolOpts)
   }
 
   return result
 }
 
-function paramToValibot(v: typeof import('valibot'), param: ParamDef): unknown {
+function paramToValibot(v: typeof valibot, param: ParamDef): unknown {
   const typeMap: Record<ParamType, () => unknown> = {
     string: () => (param.enum ? v.picklist(param.enum as [string, ...string[]]) : v.string()),
     number: () => {

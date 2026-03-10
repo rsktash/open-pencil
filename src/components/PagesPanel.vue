@@ -40,7 +40,7 @@ function startRename(pg: { id: string; name: string }) {
 <template>
   <div data-test-id="pages-panel" class="flex min-h-0 flex-1 flex-col">
     <div class="flex shrink-0 items-center justify-between px-3 py-1.5">
-      <span data-test-id="pages-header" class="text-[11px] uppercase tracking-wider text-muted"
+      <span data-test-id="pages-header" class="text-[11px] tracking-wider text-muted uppercase"
         >Pages</span
       >
       <button
@@ -52,17 +52,22 @@ function startRename(pg: { id: string; name: string }) {
         +
       </button>
     </div>
-    <div class="overflow-x-hidden overflow-y-auto scrollbar-thin px-1 pb-1">
+    <div class="scrollbar-thin overflow-x-hidden overflow-y-auto px-1 pb-1">
       <div v-for="pg in pages" :key="pg.id">
-        <input
+        <div
           v-if="rename.editingId.value === pg.id"
-          :ref="(el) => setPageInputRef(pg.id, el as HTMLInputElement | null)"
-          data-test-id="pages-item-input"
-          class="w-full rounded border border-accent bg-input px-2 py-1 text-xs text-surface outline-none"
-          :value="pg.name"
-          @blur="rename.commit(pg.id, $event.target as HTMLInputElement)"
-          @keydown="rename.onKeydown"
-        />
+          class="flex w-full items-center gap-1.5 rounded px-2 py-1"
+        >
+          <icon-lucide-file class="size-3 shrink-0 opacity-70" />
+          <input
+            :ref="(el) => setPageInputRef(pg.id, el as HTMLInputElement | null)"
+            data-test-id="pages-item-input"
+            class="min-w-0 flex-1 rounded border border-accent bg-input px-1 py-0 text-xs text-surface outline-none"
+            :value="pg.name"
+            @blur="rename.commit(pg.id, $event.target as HTMLInputElement)"
+            @keydown="rename.onKeydown"
+          />
+        </div>
         <div
           v-else-if="isDivider(pg)"
           class="my-1 flex items-center px-2"

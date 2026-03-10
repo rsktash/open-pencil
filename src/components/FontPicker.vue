@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import type { ListboxFilter } from 'reka-ui'
 import {
   ListboxContent,
-  ListboxFilter,
   ListboxItem,
   ListboxRoot,
   ListboxVirtualizer,
@@ -67,7 +67,7 @@ function onSelect(val: string) {
         panelSurface({
           radius: 'md',
           padding: 'none',
-          class: 'z-50 flex min-w-56 w-[var(--reka-popper-anchor-width)] flex-col overflow-hidden'
+          class: 'z-50 flex w-[var(--reka-popper-anchor-width)] min-w-56 flex-col overflow-hidden'
         })
       "
       @open-auto-focus.prevent

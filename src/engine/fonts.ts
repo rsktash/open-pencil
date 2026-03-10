@@ -1,11 +1,3 @@
-export {
-  initFontService,
-  getFontProvider,
-  ensureNodeFont,
-  ensureCJKFallback,
-  getCJKFallbackFamily
-} from '@open-pencil/core'
-
 import {
   IS_TAURI,
   loadFont as loadFontCore,
@@ -38,7 +30,7 @@ async function getTauriFonts(): Promise<TauriFontFamily[]> {
 
 export function preloadFonts(): void {
   if (IS_TAURI) {
-    getTauriFonts().then(registerFontFaces)
+    void getTauriFonts().then(registerFontFaces)
   }
 }
 

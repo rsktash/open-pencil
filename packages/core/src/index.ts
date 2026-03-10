@@ -22,8 +22,12 @@ export {
   type LayoutMode,
   type LayoutSizing,
   type LayoutAlign,
+  type LayoutAlignSelf,
   type LayoutCounterAlign,
   type LayoutWrap,
+  type GridTrack,
+  type GridTrackSizing,
+  type GridPosition,
   type ConstraintType,
   type TextAutoResize,
   type TextAlignVertical,
@@ -43,7 +47,8 @@ export {
   type VariableCollection,
   type VariableCollectionMode,
   type CharacterStyleOverride,
-  type StyleRun
+  type StyleRun,
+  type SceneGraphEvents
 } from './scene-graph'
 
 export { FigmaAPI, FigmaNodeProxy, type FigmaFontName } from './figma-api'
@@ -62,9 +67,11 @@ export type {
   ToolCaptureHighlight
 } from './tools'
 export { executeRpcCommand, ALL_RPC_COMMANDS } from './rpc'
+export { queryByXPath, matchByXPath } from './xpath'
+export type { XPathQueryOptions } from './xpath'
 export type {
   InfoResult, PageItem, TreeArgs, TreeResult, TreeNodeResult,
-  FindArgs, FindNodeResult, NodeArgs, NodeResult,
+  FindArgs, FindNodeResult, QueryArgs, QueryNodeResult, NodeArgs, NodeResult,
   VariablesArgs, VariablesResult,
   AnalyzeColorsArgs, AnalyzeColorsResult,
   AnalyzeTypographyArgs, AnalyzeTypographyResult,
@@ -92,6 +99,7 @@ export {
   initFontService,
   getFontProvider,
   isFontLoaded,
+  getLoadedFontData,
   markFontLoaded,
   ensureNodeFont,
   ensureCJKFallback,
@@ -121,7 +129,7 @@ export {
   computeVectorBounds
 } from './vector'
 export { computeSelectionBounds, computeSnap, type SnapGuide } from './snap'
-export { UndoManager } from './undo'
+export { UndoManager, type UndoEntry } from './undo'
 export { TextEditor, type TextCaret, type TextEditorState } from './text-editor'
 export {
   getStyleAt,

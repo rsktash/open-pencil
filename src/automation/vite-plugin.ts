@@ -11,7 +11,7 @@ export function automationPlugin(): Plugin {
     name: 'open-pencil-automation',
     configureServer(server) {
       if (!shouldStartViteAutomationBridge(process.env)) return
-      import('./bridge').then(({ startAutomationBridge }) => {
+      void import('./bridge').then(({ startAutomationBridge }) => {
         startAutomationBridge(server)
       })
     }

@@ -1,6 +1,7 @@
 import { Chat } from '@ai-sdk/vue'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { useLocalStorage } from '@vueuse/core'
 import { createProviderRegistry, DirectChatTransport, ToolLoopAgent } from 'ai'
 import dedent from 'dedent'
 import { computed, ref, shallowRef, watch } from 'vue'
@@ -22,10 +23,10 @@ import {
   isAttachmentPlaceholderUrl,
   storeChatAttachment
 } from '@/utils/chat-attachment-store'
-import { AI_MODELS, DEFAULT_AI_MODEL } from '@open-pencil/core'
+import { AI_MODELS, AI_PROVIDERS, DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER } from '@open-pencil/core'
 
 import type { FileUIPart, ReasoningUIPart, TextUIPart, ToolUIPart, UIMessage } from 'ai'
-import type { ModelOption } from '@open-pencil/core'
+import type { AIProviderID, ModelOption } from '@open-pencil/core'
 
 export const MODELS = AI_MODELS
 export type { AIBackendId, ModelOption } from '@open-pencil/core'
@@ -44,6 +45,7 @@ export interface CliSessionState {
 }
 
 const MODEL_STORAGE = 'open-pencil:model'
+const STORAGE_PREFIX = 'open-pencil:'
 const API_KEY_STORAGE = {
   openrouter: 'open-pencil:openrouter-api-key',
   openai: 'open-pencil:openai-api-key'
@@ -116,6 +118,10 @@ function setStoredValue(key: string, value: string) {
   } else {
     localStorage.removeItem(key)
   }
+}
+
+function keyStorageKey(id: string) {
+  return `${STORAGE_PREFIX}ai-key:${id}`
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -415,11 +421,34 @@ const selectedModel = computed(() => {
 })
 const activeBackend = computed(() => selectedModel.value.backend)
 const backendInfo = computed(() => AI_BACKEND_INFO[activeBackend.value])
+const providerID = useLocalStorage<AIProviderID>(`${STORAGE_PREFIX}ai-provider`, DEFAULT_AI_PROVIDER)
+const providerDef = computed(
+  () => AI_PROVIDERS.find((provider) => provider.id === providerID.value) ?? AI_PROVIDERS[0]
+)
+const customBaseURL = useLocalStorage(`${STORAGE_PREFIX}ai-base-url`, '')
+const customModelID = useLocalStorage(`${STORAGE_PREFIX}ai-custom-model`, '')
+const customAPIType = useLocalStorage<'completions' | 'responses'>(
+  `${STORAGE_PREFIX}ai-api-type`,
+  'completions'
+)
+const maxOutputTokens = useLocalStorage(`${STORAGE_PREFIX}ai-max-output-tokens`, 16384)
+const modelID = computed({
+  get: () => selectedModel.value.model ?? selectedModel.value.id,
+  set: (next) => {
+    const nextModel = ALL_MODELS.find(
+      (model) =>
+        model.model === next &&
+        (model.backend === activeBackend.value || model.backend === providerID.value)
+    )
+    if (nextModel) modelId.value = nextModel.id
+  }
+})
 const apiKey = computed({
   get: () => {
     if (activeBackend.value === 'openai') return openaiApiKey.value
     if (activeBackend.value === 'openrouter') return openrouterApiKey.value
-    return ''
+    const key = typeof window === 'undefined' ? '' : localStorage.getItem(keyStorageKey(providerID.value))
+    return key ?? ''
   },
   set: (value: string) => {
     if (activeBackend.value === 'openai') {
@@ -428,9 +457,15 @@ const apiKey = computed({
     }
     if (activeBackend.value === 'openrouter') {
       openrouterApiKey.value = value
+      return
     }
+    setStoredValue(keyStorageKey(providerID.value), value)
   }
 })
+
+function setAPIKey(value: string) {
+  apiKey.value = value
+}
 
 watch(openrouterApiKey, (key) => {
   setStoredValue(API_KEY_STORAGE.openrouter, key)
@@ -442,6 +477,13 @@ watch(openaiApiKey, (key) => {
 
 watch(modelId, (id) => {
   setStoredValue(MODEL_STORAGE, id)
+})
+
+watch(providerID, (nextProvider) => {
+  const nextModel = ALL_MODELS.find((model) => model.backend === nextProvider)
+  if (nextModel) {
+    modelId.value = nextModel.id
+  }
 })
 
 watch(subagentCount, (count) => {
@@ -549,7 +591,9 @@ function createTransport() {
   const agent = new ToolLoopAgent({
     model: providerRegistry.languageModel(apiModel.id),
     instructions: SYSTEM_PROMPT,
-    tools
+    tools,
+    maxOutputTokens: maxOutputTokens.value,
+    prepareCall: (options) => ({ ...options, maxOutputTokens: maxOutputTokens.value })
   })
 
   return new DirectChatTransport({ agent })
@@ -626,6 +670,14 @@ if (typeof window !== 'undefined') {
 export function useAIChat() {
   return {
     apiKey,
+    providerID,
+    providerDef,
+    setAPIKey,
+    modelID,
+    customBaseURL,
+    customModelID,
+    customAPIType,
+    maxOutputTokens,
     activeCliSession,
     availableModels,
     backendInfo,

@@ -118,7 +118,9 @@ const editMenu: MenuItem[] = [
 ]
 
 const viewMenu: MenuItem[] = [
-  { label: 'Zoom to fit', shortcut: '⇧1', action: () => store.zoomToFit() },
+  { label: 'Zoom to 100%', shortcut: `${mod}0`, action: () => store.zoomTo100() },
+  { label: 'Zoom to fit', shortcut: `${mod}1`, action: () => store.zoomToFit() },
+  { label: 'Zoom to selection', shortcut: `${mod}2`, action: () => store.zoomToSelection() },
   {
     label: 'Zoom in',
     shortcut: `${mod}=`,
@@ -219,7 +221,7 @@ const topMenus = computed(() => [
       </button>
     </div>
     <div v-if="!IS_TAURI" class="flex items-center px-1 pb-1">
-      <MenubarRoot class="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+      <MenubarRoot class="scrollbar-none flex items-center gap-0.5 overflow-x-auto">
         <MenubarMenu v-for="menu in topMenus" :key="menu.label">
           <MenubarTrigger
             :data-test-id="`menubar-${menu.label.toLowerCase()}`"

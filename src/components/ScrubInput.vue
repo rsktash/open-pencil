@@ -2,28 +2,29 @@
 import { ref, computed } from 'vue'
 import { useEventListener } from '@vueuse/core'
 
-const props = withDefaults(
-  defineProps<{
-    modelValue: number | symbol
-    min?: number
-    max?: number
-    step?: number
-    icon?: string
-    label?: string
-    suffix?: string
-    sensitivity?: number
-    placeholder?: string
-  }>(),
-  {
-    min: -Infinity,
-    max: Infinity,
-    step: 1,
-    sensitivity: 1,
-    placeholder: 'Mixed'
-  }
-)
+const {
+  modelValue,
+  min = -Infinity,
+  max = Infinity,
+  step = 1,
+  icon,
+  label,
+  suffix,
+  sensitivity = 1,
+  placeholder = 'Mixed'
+} = defineProps<{
+  modelValue: number | symbol
+  min?: number
+  max?: number
+  step?: number
+  icon?: string
+  label?: string
+  suffix?: string
+  sensitivity?: number
+  placeholder?: string
+}>()
 
-const isMixed = computed(() => typeof props.modelValue === 'symbol')
+const isMixed = computed(() => typeof modelValue === 'symbol')
 
 const emit = defineEmits<{
   'update:modelValue': [value: number]
@@ -37,7 +38,7 @@ const scrubbing = ref(false)
 let stopMove: (() => void) | undefined
 let stopUp: (() => void) | undefined
 
-const numericValue = computed(() => (isMixed.value ? 0 : (props.modelValue as number)))
+const numericValue = computed(() => (isMixed.value ? 0 : (modelValue as number)))
 const displayValue = computed(() => (isMixed.value ? '' : Math.round(numericValue.value)))
 
 function startScrub(e: PointerEvent) {
@@ -57,9 +58,9 @@ function startScrub(e: PointerEvent) {
       document.body.style.cursor = 'ew-resize'
     }
     if (hasMoved) {
-      accumulated += dx * props.step * props.sensitivity
-      const clamped = Math.round(Math.min(props.max, Math.max(props.min, accumulated)))
-      if (clamped !== props.modelValue) {
+      accumulated += dx * step * sensitivity
+      const clamped = Math.round(Math.min(max, Math.max(min, accumulated)))
+      if (clamped !== modelValue) {
         emit('update:modelValue', clamped)
       }
     }
@@ -71,8 +72,8 @@ function startScrub(e: PointerEvent) {
     stopMove?.()
     stopUp?.()
     if (hasMoved) {
-      if (props.modelValue !== valueBeforeScrub) {
-        emit('commit', props.modelValue, valueBeforeScrub)
+      if (modelValue !== valueBeforeScrub) {
+        emit('commit', modelValue, valueBeforeScrub)
       }
     } else {
       startEdit()
@@ -91,7 +92,7 @@ function commitEdit(e: Event) {
   const val = +(e.target as HTMLInputElement).value
   const previous = numericValue.value
   if (!Number.isNaN(val)) {
-    const clamped = Math.min(props.max, Math.max(props.min, val))
+    const clamped = Math.min(max, Math.max(min, val))
     emit('update:modelValue', clamped)
     if (clamped !== previous) {
       emit('commit', clamped, previous)
@@ -112,12 +113,12 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div
     data-test-id="scrub-input"
-    class="flex min-w-0 flex-1 items-center rounded border border-border bg-input h-[26px] focus-within:border-accent"
+    class="flex h-[26px] min-w-0 flex-1 items-center rounded border border-border bg-input focus-within:border-accent"
     :style="{ cursor: editing ? 'auto' : 'ew-resize' }"
     @pointerdown="!editing && startScrub($event)"
   >
     <span
-      class="flex shrink-0 select-none items-center justify-center self-stretch px-[5px] text-muted [&>*]:pointer-events-none"
+      class="flex shrink-0 items-center justify-center self-stretch px-[5px] text-muted select-none [&>*]:pointer-events-none"
     >
       <slot name="icon">
         <span v-if="icon" class="text-[11px] leading-none">{{ icon }}</span>
@@ -140,7 +141,7 @@ function onKeydown(e: KeyboardEvent) {
     />
     <span
       v-else
-      class="flex flex-1 select-none items-center truncate pr-1.5 text-xs overflow-hidden"
+      class="flex flex-1 items-center truncate overflow-hidden pr-1.5 text-xs select-none"
     >
       <span v-if="isMixed" class="flex-1 text-muted">{{ placeholder }}</span>
       <template v-else>

@@ -101,7 +101,9 @@ export function startAutomationBridge(server: ViteServer) {
     authToken = null
 
     ws.on('message', (raw) => {
-      handleBrowserMessage(typeof raw === 'string' ? raw : raw.toString('utf-8'))
+      handleBrowserMessage(
+        typeof raw === 'string' ? raw : Buffer.from(raw as Buffer).toString('utf-8')
+      )
     })
 
     ws.on('close', () => {
@@ -115,10 +117,10 @@ export function startAutomationBridge(server: ViteServer) {
 
   async function jsxToTree(jsx: string): Promise<unknown> {
     const core = await server.ssrLoadModule('@open-pencil/core')
-    const buildComponent = core.buildComponent as (jsx: string) => Promise<() => unknown>
+    const buildComponent = core.buildComponent as (jsx: string) => () => unknown
     const resolveToTree = core.resolveToTree as (el: unknown) => unknown
     const createElement = core.createElement as (type: unknown, props: unknown) => unknown
-    const Component = await buildComponent(jsx)
+    const Component = buildComponent(jsx)
     const element = createElement(Component, null)
     return resolveToTree(element)
   }
@@ -156,7 +158,7 @@ export function startAutomationBridge(server: ViteServer) {
     if (provided !== authToken) {
       return c.json({ error: 'Unauthorized' }, 401)
     }
-    await next()
+    return next()
   })
 
   app.post('/rpc', async (c) => {
@@ -174,7 +176,7 @@ export function startAutomationBridge(server: ViteServer) {
     }
   })
 
-  startServer(app)
+  void startServer(app)
 
   console.log(`[automation] HTTP  http://127.0.0.1:${AUTOMATION_HTTP_PORT}`)
   console.log(`[automation] WS    ws://127.0.0.1:${AUTOMATION_WS_PORT}`)

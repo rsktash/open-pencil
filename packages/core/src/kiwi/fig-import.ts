@@ -1,30 +1,24 @@
 import type { VariableType, VariableValue } from '../scene-graph'
 import { SceneGraph } from '../scene-graph'
 
-import { guidToString, nodeChangeToProps, sortChildren } from './kiwi-convert'
+import {
+  guidToString,
+  nodeChangeToProps,
+  sortChildren,
+  VARIABLE_BINDING_FIELDS_INVERSE
+} from './kiwi-convert'
 import { populateAndApplyOverrides } from './instance-overrides'
 import type { InstanceNodeChange } from './instance-overrides'
 
-import type { NodeChange } from './codec'
+import type { NodeChange, VariableDataValuesEntry } from './codec'
 
-export function importNodeChanges(
-  nodeChanges: NodeChange[],
-  blobs: Uint8Array[] = [],
-  images?: Map<string, Uint8Array>
-): SceneGraph {
-  const graph = new SceneGraph()
+interface ChangeMaps {
+  changeMap: Map<string, NodeChange>
+  parentMap: Map<string, string>
+  childrenMap: Map<string, string[]>
+}
 
-  if (images) {
-    for (const [hash, data] of images) {
-      graph.images.set(hash, data)
-    }
-  }
-
-  // Remove the default page created by constructor — we'll create pages from the file
-  for (const page of graph.getPages(true)) {
-    graph.deleteNode(page.id)
-  }
-
+function buildChangeMaps(nodeChanges: NodeChange[]): ChangeMaps {
   const changeMap = new Map<string, NodeChange>()
   const parentMap = new Map<string, string>()
   const childrenMap = new Map<string, string[]>()
@@ -52,88 +46,122 @@ export function importNodeChanges(
     if (parentNc) sortChildren(children, parentNc, changeMap)
   }
 
-  function getChildren(ncId: string): string[] {
-    return childrenMap.get(ncId) ?? []
+  return { changeMap, parentMap, childrenMap }
+}
+
+function resolveVariableType(resolvedType: string | undefined): VariableType {
+  if (resolvedType === 'COLOR') return 'COLOR'
+  if (resolvedType === 'BOOLEAN') return 'BOOLEAN'
+  if (resolvedType === 'STRING') return 'STRING'
+  return 'FLOAT'
+}
+
+function resolveVariableValue(entry: VariableDataValuesEntry): VariableValue | undefined {
+  const vd = entry.variableData
+  if (!vd.value) return undefined
+
+  const dt = vd.dataType ?? vd.resolvedDataType
+  if (dt === 'COLOR' && vd.value.colorValue) {
+    const c = vd.value.colorValue
+    return { r: c.r, g: c.g, b: c.b, a: c.a }
   }
-
-  const created = new Set<string>()
-  const guidToNodeId = new Map<string, string>()
-
-  function createSceneNode(ncId: string, graphParentId: string) {
-    if (created.has(ncId)) return
-    created.add(ncId)
-
-    const nc = changeMap.get(ncId)
-    if (!nc) return
-
-    const { nodeType, ...props } = nodeChangeToProps(nc, blobs)
-    if (nodeType === 'DOCUMENT' || nodeType === 'VARIABLE') return
-
-    const node = graph.createNode(nodeType, graphParentId, props)
-    guidToNodeId.set(ncId, node.id)
-
-    for (const childId of getChildren(ncId)) {
-      createSceneNode(childId, node.id)
-    }
+  if (dt === 'BOOLEAN') return vd.value.boolValue ?? false
+  if (dt === 'STRING') return vd.value.textValue ?? ''
+  if (dt === 'ALIAS' && vd.value.alias?.guid) {
+    return { aliasId: guidToString(vd.value.alias.guid) }
   }
+  return vd.value.floatValue ?? 0
+}
 
-  function importVariables() {
-    for (const [id, nc] of changeMap) {
-      if (nc.type !== 'VARIABLE') continue
-      const varData = (
-        nc as unknown as {
-          variableData?: {
-            value?: { boolValue?: boolean; textValue?: string; floatValue?: number }
-            dataType?: string
-          }
-        }
-      ).variableData
-      if (!varData) continue
+function resolveDefaultValue(type: VariableType): VariableValue {
+  if (type === 'BOOLEAN') return false
+  if (type === 'STRING') return ''
+  if (type === 'COLOR') return { r: 0, g: 0, b: 0, a: 1 }
+  return 0
+}
 
-      const parentId = parentMap.get(id) ?? ''
-      const parentNc = changeMap.get(parentId)
-      const collectionName = parentNc?.name ?? 'Variables'
-      const collectionId = parentId
+function importCollections(
+  changeMap: Map<string, NodeChange>,
+  graph: SceneGraph
+): void {
+  for (const [id, nc] of changeMap) {
+    if (nc.type !== 'VARIABLE_SET') continue
 
-      if (!graph.variableCollections.has(collectionId)) {
-        graph.addCollection({
-          id: collectionId,
-          name: collectionName,
-          modes: [{ modeId: 'default', name: 'Default' }],
-          defaultModeId: 'default',
-          variableIds: []
-        })
-      }
+    const modes = (nc.variableSetModes ?? []).map((m) => {
+      const modeId = guidToString(m.id)
+      return { modeId, name: m.name }
+    })
+    if (modes.length === 0) modes.push({ modeId: 'default', name: 'Default' })
 
-      let type: VariableType = 'FLOAT'
-      let value: VariableValue = 0
-      const dt = varData.dataType
-      const v = varData.value
+    graph.addCollection({
+      id,
+      name: nc.name ?? 'Variables',
+      modes,
+      defaultModeId: modes[0].modeId,
+      variableIds: []
+    })
+  }
+}
 
-      if (dt === 'BOOLEAN' || dt === '0') {
-        type = 'BOOLEAN'
-        value = v?.boolValue ?? false
-      } else if (dt === 'STRING' || dt === '2') {
-        type = 'STRING'
-        value = v?.textValue ?? ''
-      } else {
-        type = 'FLOAT'
-        value = v?.floatValue ?? 0
-      }
+function importVariableEntries(
+  changeMap: Map<string, NodeChange>,
+  parentMap: Map<string, string>,
+  graph: SceneGraph
+): void {
+  for (const [id, nc] of changeMap) {
+    if (nc.type !== 'VARIABLE') continue
 
-      graph.addVariable({
-        id,
-        name: nc.name ?? 'Variable',
-        type,
-        collectionId,
-        valuesByMode: { default: value },
-        description: '',
-        hiddenFromPublishing: false
+    const collectionId = nc.variableSetID?.guid ? guidToString(nc.variableSetID.guid) : (parentMap.get(id) ?? '')
+
+    if (!graph.variableCollections.has(collectionId)) {
+      const parentNc = changeMap.get(collectionId)
+      graph.addCollection({
+        id: collectionId,
+        name: parentNc?.name ?? 'Variables',
+        modes: [{ modeId: 'default', name: 'Default' }],
+        defaultModeId: 'default',
+        variableIds: []
       })
     }
-  }
 
-  // Find the document node (type=DOCUMENT or guid 0:0)
+    const type = resolveVariableType(nc.variableResolvedType)
+    const valuesByMode: Record<string, VariableValue> = {}
+
+    if (nc.variableDataValues?.entries) {
+      for (const entry of nc.variableDataValues.entries) {
+        const val = resolveVariableValue(entry)
+        if (val !== undefined) {
+          valuesByMode[guidToString(entry.modeID)] = val
+        }
+      }
+    }
+
+    if (Object.keys(valuesByMode).length === 0) {
+      const col = graph.variableCollections.get(collectionId)
+      const defaultMode = col?.defaultModeId ?? 'default'
+      valuesByMode[defaultMode] = resolveDefaultValue(type)
+    }
+
+    graph.addVariable({
+      id,
+      name: nc.name ?? 'Variable',
+      type,
+      collectionId,
+      valuesByMode,
+      description: '',
+      hiddenFromPublishing: false
+    })
+  }
+}
+
+function importPages(
+  graph: SceneGraph,
+  changeMap: Map<string, NodeChange>,
+  parentMap: Map<string, string>,
+  childrenMap: Map<string, string[]>,
+  created: Set<string>,
+  createSceneNode: (ncId: string, graphParentId: string) => void
+): void {
   let docId: string | null = null
   for (const [id, nc] of changeMap) {
     if (nc.type === 'DOCUMENT' || id === '0:0') {
@@ -143,15 +171,14 @@ export function importNodeChanges(
   }
 
   if (docId) {
-    // Import pages (CANVAS nodes) and their children
-    for (const canvasId of getChildren(docId)) {
+    for (const canvasId of childrenMap.get(docId) ?? []) {
       const canvasNc = changeMap.get(canvasId)
       if (!canvasNc) continue
       if (canvasNc.type === 'CANVAS') {
         const page = graph.addPage(canvasNc.name ?? 'Page')
         if (canvasNc.internalOnly) page.internalOnly = true
         created.add(canvasId)
-        for (const childId of getChildren(canvasId)) {
+        for (const childId of childrenMap.get(canvasId) ?? []) {
           createSceneNode(childId, page.id)
         }
       } else {
@@ -159,7 +186,6 @@ export function importNodeChanges(
       }
     }
   } else {
-    // No document structure — treat all roots as children of the first page
     const roots: string[] = []
     for (const [id] of changeMap) {
       const pid = parentMap.get(id)
@@ -170,15 +196,84 @@ export function importNodeChanges(
       createSceneNode(rootId, page.id)
     }
   }
+}
 
-  importVariables()
+function importVariableBindings(
+  changeMap: Map<string, NodeChange>,
+  guidToNodeId: Map<string, string>,
+  graph: SceneGraph
+): void {
+  for (const [ncId, nc] of changeMap) {
+    if (!nc.variableConsumptionMap?.entries?.length) continue
+    const nodeId = guidToNodeId.get(ncId)
+    if (!nodeId) continue
+    for (const entry of nc.variableConsumptionMap.entries) {
+      const varGuid = entry.variableData?.value?.alias?.guid
+      if (!varGuid) continue
+      const field = VARIABLE_BINDING_FIELDS_INVERSE[entry.variableField ?? '']
+      if (field) graph.bindVariable(nodeId, field, guidToString(varGuid))
+    }
+  }
+}
 
-  // Remap componentId from original Figma GUIDs to imported node IDs
+function remapComponentIds(
+  graph: SceneGraph,
+  guidToNodeId: Map<string, string>
+): void {
   for (const node of graph.getAllNodes()) {
     if (node.type !== 'INSTANCE' || !node.componentId) continue
     const remapped = guidToNodeId.get(node.componentId)
     if (remapped) node.componentId = remapped
   }
+}
+
+export function importNodeChanges(
+  nodeChanges: NodeChange[],
+  blobs: Uint8Array[] = [],
+  images?: Map<string, Uint8Array>
+): SceneGraph {
+  const graph = new SceneGraph()
+
+  if (images) {
+    for (const [hash, data] of images) {
+      graph.images.set(hash, data)
+    }
+  }
+
+  for (const page of graph.getPages(true)) {
+    graph.deleteNode(page.id)
+  }
+
+  const { changeMap, parentMap, childrenMap } = buildChangeMaps(nodeChanges)
+
+  const created = new Set<string>()
+  const guidToNodeId = new Map<string, string>()
+  const getChildren = (ncId: string): string[] => childrenMap.get(ncId) ?? []
+
+  function createSceneNode(ncId: string, graphParentId: string) {
+    if (created.has(ncId)) return
+    created.add(ncId)
+
+    const nc = changeMap.get(ncId)
+    if (!nc) return
+
+    const { nodeType, ...props } = nodeChangeToProps(nc, blobs)
+    if (nodeType === 'DOCUMENT' || nodeType === 'VARIABLE' || nc.type === 'VARIABLE_SET') return
+
+    const node = graph.createNode(nodeType, graphParentId, props)
+    guidToNodeId.set(ncId, node.id)
+
+    for (const childId of getChildren(ncId)) {
+      createSceneNode(childId, node.id)
+    }
+  }
+
+  importPages(graph, changeMap, parentMap, childrenMap, created, createSceneNode)
+
+  importCollections(changeMap, graph)
+  importVariableEntries(changeMap, parentMap, graph)
+  importVariableBindings(changeMap, guidToNodeId, graph)
+  remapComponentIds(graph, guidToNodeId)
 
   populateAndApplyOverrides(
     graph,
@@ -187,7 +282,6 @@ export function importNodeChanges(
     blobs
   )
 
-  // Ensure at least one page exists
   if (graph.getPages(true).length === 0) {
     graph.addPage('Page 1')
   }

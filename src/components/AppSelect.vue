@@ -13,7 +13,7 @@ import {
 
 import { selectContent, selectItem, selectTrigger } from '@/components/ui/select'
 
-defineProps<{
+const { options, placeholder } = defineProps<{
   options: { value: T; label: string }[]
   placeholder?: string
 }>()
@@ -34,14 +34,14 @@ const modelValue = defineModel<T>({ required: true })
       <SelectContent
         position="popper"
         :side-offset="2"
-        :class="selectContent({ class: 'max-h-56 min-w-[var(--reka-select-trigger-width)]' })"
+        :class="selectContent({ class: 'max-h-56' })"
       >
         <SelectViewport class="p-0.5">
           <SelectItem
             v-for="opt in options"
             :key="String(opt.value)"
             :value="opt.value"
-            :class="selectItem({ class: 'rounded py-1.5 pl-6 pr-2 text-xs' })"
+            :class="selectItem({ class: 'rounded py-1.5 pr-2 pl-6 text-xs' })"
           >
             <SelectItemIndicator class="absolute left-1.5 inline-flex items-center justify-center">
               <icon-lucide-check class="size-3 text-accent" />

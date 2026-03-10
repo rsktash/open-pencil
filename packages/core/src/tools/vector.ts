@@ -3,6 +3,8 @@ import { defineTool, nodeSummary } from './schema'
 import type { FigmaNodeProxy } from '../figma-api'
 import type { ToolCaptureHighlight, ToolCaptureRect } from './schema'
 
+const CHUNK_SIZE = 0x8000
+
 function nodeToCaptureRect(node: FigmaNodeProxy): ToolCaptureRect {
   const bounds = node.absoluteBoundingBox
   return {
@@ -65,6 +67,18 @@ function buildCaptureHighlight(
 
   const rects = nodes.map(nodeToCaptureRect)
   return rects.length > 0 ? { rects } : null
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64')
+  }
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, i + CHUNK_SIZE)
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
+  }
+  return btoa(binary)
 }
 
 export const booleanUnion = defineTool({
@@ -170,14 +184,10 @@ export const pathScale = defineTool({
       v.y = cy + (v.y - cy) * factor
     }
     for (const s of vn.segments) {
-      if (s.tangentStart) {
-        s.tangentStart.x *= factor
-        s.tangentStart.y *= factor
-      }
-      if (s.tangentEnd) {
-        s.tangentEnd.x *= factor
-        s.tangentEnd.y *= factor
-      }
+      s.tangentStart.x *= factor
+      s.tangentStart.y *= factor
+      s.tangentEnd.x *= factor
+      s.tangentEnd.y *= factor
     }
     figma.graph.updateNode(id, { vectorNetwork: vn } as any)
     return { id, factor }
@@ -209,14 +219,10 @@ export const pathFlip = defineTool({
       else v.y = h - v.y
     }
     for (const s of vn.segments) {
-      if (s.tangentStart) {
-        if (axis === 'horizontal') s.tangentStart.x = -s.tangentStart.x
-        else s.tangentStart.y = -s.tangentStart.y
-      }
-      if (s.tangentEnd) {
-        if (axis === 'horizontal') s.tangentEnd.x = -s.tangentEnd.x
-        else s.tangentEnd.y = -s.tangentEnd.y
-      }
+      if (axis === 'horizontal') s.tangentStart.x = -s.tangentStart.x
+      else s.tangentStart.y = -s.tangentStart.y
+      if (axis === 'horizontal') s.tangentEnd.x = -s.tangentEnd.x
+      else s.tangentEnd.y = -s.tangentEnd.y
     }
     figma.graph.updateNode(id, { vectorNetwork: vn } as any)
     return { id, axis }
@@ -312,7 +318,7 @@ export const exportSvg = defineTool({
     }
   },
   execute: async (figma, args) => {
-    const { renderNodesToSVG } = await import('../svg-export.js')
+    const { renderNodesToSVG } = await import('../svg-export/index.js')
     const pageId = figma.currentPageId
     const ids =
       args.ids && args.ids.length > 0
@@ -355,16 +361,13 @@ export const exportImage = defineTool({
       args.ids && args.ids.length > 0
         ? args.ids
         : figma.currentPage.children.map((n) => n.id)
-    const format = ((args.format as string) ?? 'PNG').toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
+    const format = (args.format ?? 'PNG').toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
     const data = await figma.exportImage(ids, {
       scale: args.scale ?? 1,
       format
     })
     if (!data || data.length === 0) return { error: 'No visible nodes to export' }
-    const base64 =
-      typeof Buffer !== 'undefined'
-        ? Buffer.from(data).toString('base64')
-        : btoa(String.fromCharCode(...data))
+    const base64 = uint8ArrayToBase64(data)
     const mimeMap = { PNG: 'image/png', JPG: 'image/jpeg', WEBP: 'image/webp' } as const
     return {
       mimeType: mimeMap[format],

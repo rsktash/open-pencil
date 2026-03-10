@@ -12,12 +12,16 @@ const store = useEditorStore()
 const collab = useCollabInjected()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
-const { hitTestSectionTitle, hitTestComponentLabel } = useCanvas(canvasRef, store)
+const { hitTestSectionTitle, hitTestComponentLabel, hitTestFrameTitle } = useCanvas(
+  canvasRef,
+  store
+)
 const { cursorOverride } = useCanvasInput(
   canvasRef,
   store,
   hitTestSectionTitle,
   hitTestComponentLabel,
+  hitTestFrameTitle,
   (cx, cy) => collab?.updateCursor(cx, cy, store.state.currentPageId)
 )
 
@@ -42,7 +46,7 @@ const cursor = computed(() => {
   <CanvasContextMenu>
     <div
       data-test-id="canvas-area"
-      class="canvas-area relative flex-1 min-w-0 min-h-0 overflow-hidden"
+      class="canvas-area relative min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       <canvas
         ref="canvasRef"

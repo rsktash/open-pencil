@@ -84,7 +84,7 @@ app.all('/mcp', async (c) => {
   return transport.handleRequest(c.req.raw)
 })
 
-const isBun = globalThis.Bun !== undefined
+const isBun = 'Bun' in globalThis
 
 if (isBun) {
   Bun.serve({ fetch: app.fetch, port, hostname: host })
