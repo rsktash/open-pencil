@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "bun run lint && vite build",
+    "build:web": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "oxlint -c oxlint.json --type-aware --type-check src/ packages/core/src/ packages/cli/src/ packages/mcp/src/ packages/acp/src/",
