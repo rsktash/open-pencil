@@ -420,31 +420,31 @@ export const takeScreenshot = defineTool({
       return { error: 'Image export is not available in this environment' }
     }
 
-    const target = ((args.target as string) ?? 'PAGE').toUpperCase() as 'PAGE' | 'SELECTION'
+    const target = (args.target as string).toUpperCase() as 'PAGE' | 'SELECTION'
     const explicitIds =
       args.ids?.filter((id): id is string => typeof id === 'string' && id.length > 0) ?? []
-    const screenshotNodes =
-      explicitIds.length > 0
-        ? explicitIds
-            .map((id) => figma.getNodeById(id))
-            .filter((node): node is FigmaNodeProxy => node !== null)
-        : target === 'SELECTION'
-          ? [...figma.currentPage.selection]
-          : [...figma.currentPage.children]
+    let screenshotNodes: FigmaNodeProxy[]
+    if (explicitIds.length > 0) {
+      screenshotNodes = explicitIds
+        .map((id) => figma.getNodeById(id))
+        .filter((node): node is FigmaNodeProxy => node !== null)
+    } else if (target === 'SELECTION') {
+      screenshotNodes = [...figma.currentPage.selection]
+    } else {
+      screenshotNodes = [...figma.currentPage.children]
+    }
     const screenshotIds = screenshotNodes.map((node) => node.id)
 
     if (screenshotIds.length === 0) {
+      let error = 'No visible nodes on the current page to capture'
+      if (explicitIds.length > 0) error = 'No valid nodes to capture'
+      else if (target === 'SELECTION') error = 'No selected nodes to capture'
       return {
-        error:
-          explicitIds.length > 0
-            ? 'No valid nodes to capture'
-            : target === 'SELECTION'
-            ? 'No selected nodes to capture'
-            : 'No visible nodes on the current page to capture'
+        error
       }
     }
 
-    const format = ((args.format as string) ?? 'PNG').toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
+    const format = (args.format as string).toUpperCase() as 'PNG' | 'JPG' | 'WEBP'
     const requestedScale = args.scale ?? 1
     const maxLongEdge = args.max_long_edge ?? 2000
     const effectiveScale = resolveCaptureScale(screenshotNodes, requestedScale, maxLongEdge)
@@ -454,10 +454,7 @@ export const takeScreenshot = defineTool({
     })
     if (!data || data.length === 0) return { error: 'No visible nodes to capture' }
 
-    const base64 =
-      typeof Buffer !== 'undefined'
-        ? Buffer.from(data).toString('base64')
-        : btoa(String.fromCharCode(...data))
+    const base64 = uint8ArrayToBase64(data)
     const mimeMap = { PNG: 'image/png', JPG: 'image/jpeg', WEBP: 'image/webp' } as const
     const resolvedTarget = explicitIds.length > 0 ? 'NODES' : target
     const captureHighlight = buildCaptureHighlight(resolvedTarget, screenshotNodes)

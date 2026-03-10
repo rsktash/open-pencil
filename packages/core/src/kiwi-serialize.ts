@@ -7,6 +7,7 @@ import { encodeVectorNetworkBlob } from './vector'
 
 import type { NodeChange, Paint } from './kiwi/codec'
 import type { SceneGraph, SceneNode, CharacterStyleOverride, NodeType } from './scene-graph'
+import type { GUID } from './types'
 
 type KiwiNodeChange = NodeChange & Record<string, unknown>
 export interface KiwiSerializeOptions {
@@ -115,19 +116,6 @@ export function fractionalPosition(index: number): string {
   return String.fromCharCode('!'.charCodeAt(0) + index)
 }
 
-function imageHashToBytes(hash: string): Uint8Array {
-  const normalized = hash.trim().toLowerCase()
-  if (normalized.length % 2 !== 0 || /[^0-9a-f]/.test(normalized)) {
-    return new TextEncoder().encode(hash)
-  }
-
-  const bytes = new Uint8Array(normalized.length / 2)
-  for (let i = 0; i < normalized.length; i += 2) {
-    bytes[i / 2] = Number.parseInt(normalized.slice(i, i + 2), 16)
-  }
-  return bytes
-}
-
 function formatSerializedFontStyle(
   weight: number | undefined,
   italic: boolean | undefined,
@@ -142,7 +130,7 @@ function exportTextData(node: SceneNode, options: KiwiSerializeOptions): NodeCha
     return { characters: node.text }
   }
 
-  const charIds = new Array<number>(node.text.length).fill(0)
+  const charIds = Array.from<number>({ length: node.text.length }).fill(0)
   const styleMap = new Map<string, { id: number; style: CharacterStyleOverride }>()
   let nextId = 1
 
@@ -186,52 +174,53 @@ function exportTextData(node: SceneNode, options: KiwiSerializeOptions): NodeCha
   }
 }
 
-export function sceneNodeToKiwi(
+function buildFillPaints(node: SceneNode, options: KiwiSerializeOptions): Paint[] {
+  return node.fills.map((fill) => {
+    const serializedImageHash = fill.imageHash
+      ? (options.imageHashMap?.get(fill.imageHash) ?? fill.imageHash)
+      : null
+    const paint: Paint = {
+      type: fill.type,
+      color: fill.color,
+      opacity: fill.opacity,
+      visible: fill.visible,
+      blendMode: fill.blendMode ?? 'NORMAL'
+    }
+    if (fill.gradientStops) {
+      paint.stops = fill.gradientStops.map((stop) => ({
+        color: stop.color,
+        position: stop.position
+      }))
+    }
+    if (fill.gradientTransform) paint.transform = fill.gradientTransform
+    if (serializedImageHash) paint.image = { hash: serializedImageHash }
+    if (fill.imageScaleMode) paint.imageScaleMode = fill.imageScaleMode
+    if (fill.imageTransform) paint.transform = fill.imageTransform
+    return paint
+  })
+}
+
+function buildStrokePaints(node: SceneNode): Paint[] {
+  return node.strokes.map((stroke) => ({
+    type: 'SOLID',
+    color: stroke.color,
+    opacity: stroke.opacity,
+    visible: stroke.visible,
+    blendMode: 'NORMAL'
+  }))
+}
+
+function createBaseNodeChange(
   node: SceneNode,
-  parentGuid: { sessionID: number; localID: number },
+  parentGuid: GUID,
   childIndex: number,
-  localIdCounter: { value: number },
-  graph: SceneGraph,
-  blobs: Uint8Array[],
-  options: KiwiSerializeOptions = {}
-): KiwiNodeChange[] {
-  const localID = localIdCounter.value++
-  const guid = { sessionID: 1, localID }
+  guid: GUID,
+  serializedType: NodeType
+): KiwiNodeChange {
   const sx = node.flipX ? -1 : 1
   const cos = Math.cos((node.rotation * Math.PI) / 180)
   const sin = Math.sin((node.rotation * Math.PI) / 180)
-  const serializedType = options.typeOverrides?.get(node.id) ?? node.type
-
-  const fillPaints = node.fills.map((f) => {
-    const serializedImageHash = f.imageHash
-      ? options.imageHashMap?.get(f.imageHash) ?? f.imageHash
-      : null
-    const paint: Paint = {
-      type: f.type,
-      color: f.color,
-      opacity: f.opacity,
-      visible: f.visible,
-      blendMode: f.blendMode ?? 'NORMAL'
-    }
-    if (f.gradientStops) {
-      paint.stops = f.gradientStops.map((s) => ({ color: s.color, position: s.position }))
-    }
-    if (f.gradientTransform) paint.transform = f.gradientTransform
-    if (serializedImageHash) paint.image = { hash: imageHashToBytes(serializedImageHash) }
-    if (f.imageScaleMode) paint.imageScaleMode = f.imageScaleMode
-    if (f.imageTransform) paint.transform = f.imageTransform
-    return paint
-  })
-
-  const strokePaints = node.strokes.map((s) => ({
-    type: 'SOLID' as const,
-    color: s.color,
-    opacity: s.opacity,
-    visible: s.visible,
-    blendMode: 'NORMAL' as const
-  }))
-
-  const nc: KiwiNodeChange = {
+  return {
     guid,
     parentIndex: { guid: parentGuid, position: fractionalPosition(childIndex) },
     type: mapToFigmaType(serializedType),
@@ -244,120 +233,175 @@ export function sceneNodeToKiwi(
     strokeWeight: node.strokes.length > 0 ? node.strokes[0].weight : 1,
     strokeAlign: node.strokes.length > 0 ? node.strokes[0].align : 'INSIDE'
   }
+}
 
-  if (node.independentStrokeWeights) {
-    nc.borderStrokeWeightsIndependent = true
-    nc.borderTopWeight = node.borderTopWeight
-    nc.borderRightWeight = node.borderRightWeight
-    nc.borderBottomWeight = node.borderBottomWeight
-    nc.borderLeftWeight = node.borderLeftWeight
-  }
+function applyStrokeWeights(target: KiwiNodeChange, node: SceneNode): void {
+  if (!node.independentStrokeWeights) return
+  target.borderStrokeWeightsIndependent = true
+  target.borderTopWeight = node.borderTopWeight
+  target.borderRightWeight = node.borderRightWeight
+  target.borderBottomWeight = node.borderBottomWeight
+  target.borderLeftWeight = node.borderLeftWeight
+}
 
-  if (fillPaints.length > 0) nc.fillPaints = fillPaints
-  if (strokePaints.length > 0) nc.strokePaints = strokePaints
+function applyPaints(target: KiwiNodeChange, fillPaints: Paint[], strokePaints: Paint[]): void {
+  if (fillPaints.length > 0) target.fillPaints = fillPaints
+  if (strokePaints.length > 0) target.strokePaints = strokePaints
+}
 
-  if (node.cornerRadius > 0 || node.independentCorners) {
-    nc.cornerRadius = node.cornerRadius
-    nc.rectangleCornerRadiiIndependent = node.independentCorners
-    nc.rectangleTopLeftCornerRadius = node.independentCorners
-      ? node.topLeftRadius
-      : node.cornerRadius
-    nc.rectangleTopRightCornerRadius = node.independentCorners
-      ? node.topRightRadius
-      : node.cornerRadius
-    nc.rectangleBottomLeftCornerRadius = node.independentCorners
-      ? node.bottomLeftRadius
-      : node.cornerRadius
-    nc.rectangleBottomRightCornerRadius = node.independentCorners
-      ? node.bottomRightRadius
-      : node.cornerRadius
-  }
+function applyCornerData(target: KiwiNodeChange, node: SceneNode): void {
+  if (node.cornerRadius <= 0 && !node.independentCorners) return
+  target.cornerRadius = node.cornerRadius
+  target.rectangleCornerRadiiIndependent = node.independentCorners
+  target.rectangleTopLeftCornerRadius = node.independentCorners
+    ? node.topLeftRadius
+    : node.cornerRadius
+  target.rectangleTopRightCornerRadius = node.independentCorners
+    ? node.topRightRadius
+    : node.cornerRadius
+  target.rectangleBottomLeftCornerRadius = node.independentCorners
+    ? node.bottomLeftRadius
+    : node.cornerRadius
+  target.rectangleBottomRightCornerRadius = node.independentCorners
+    ? node.bottomRightRadius
+    : node.cornerRadius
+}
 
+function applyCornerSmoothing(target: KiwiNodeChange, node: SceneNode): void {
   if (node.cornerSmoothing > 0) {
-    nc.cornerSmoothing = node.cornerSmoothing
+    target.cornerSmoothing = node.cornerSmoothing
+  }
+}
+
+function applyEffects(target: KiwiNodeChange, node: SceneNode): void {
+  if (node.effects.length === 0) return
+  target.effects = node.effects.map((effect) => ({
+    type: effect.type === 'LAYER_BLUR' ? 'FOREGROUND_BLUR' : effect.type,
+    color: effect.color,
+    offset: effect.offset,
+    radius: effect.radius,
+    spread: effect.spread,
+    visible: effect.visible
+  }))
+}
+
+function applyTextData(
+  target: KiwiNodeChange,
+  node: SceneNode,
+  options: KiwiSerializeOptions
+): void {
+  if (node.type !== 'TEXT') return
+  target.fontSize = node.fontSize
+  target.fontName = {
+    family: node.fontFamily,
+    style: formatSerializedFontStyle(node.fontWeight, node.italic, options),
+    postscript: ''
+  }
+  target.textData = exportTextData(node, options)
+  target.textAutoResize = node.textAutoResize
+  target.textAlignHorizontal = node.textAlignHorizontal
+  if (node.lineHeight != null) target.lineHeight = { value: node.lineHeight, units: 'PIXELS' }
+  if (node.letterSpacing !== 0) {
+    target.letterSpacing = { value: node.letterSpacing, units: 'PIXELS' }
+  }
+  if (node.textDecoration !== 'NONE') {
+    target.textDecoration = node.textDecoration === 'UNDERLINE' ? 'UNDERLINE' : 'STRIKETHROUGH'
+  }
+}
+
+function isFrameLike(type: SceneNode['type']): boolean {
+  return (
+    type === 'FRAME' ||
+    type === 'GROUP' ||
+    type === 'COMPONENT' ||
+    type === 'COMPONENT_SET' ||
+    type === 'INSTANCE' ||
+    type === 'SECTION'
+  )
+}
+
+function applyFrameData(target: KiwiNodeChange, node: SceneNode): void {
+  if (!isFrameLike(node.type)) return
+  target.frameMaskDisabled = node.type === 'GROUP' ? true : !node.clipsContent
+  if (node.clipsContent) target.clipsContent = true
+}
+
+function applyLayoutData(target: KiwiNodeChange, node: SceneNode): void {
+  if (node.layoutMode !== 'NONE' && node.layoutMode !== 'GRID') {
+    target.stackMode = node.layoutMode
+    target.stackSpacing = node.itemSpacing
+    target.stackVerticalPadding = node.paddingTop
+    target.stackHorizontalPadding = node.paddingLeft
+    target.stackPaddingBottom = node.paddingBottom
+    target.stackPaddingRight = node.paddingRight
+    target.stackPrimarySizing = node.primaryAxisSizing === 'HUG' ? 'RESIZE_TO_FIT' : 'FIXED'
+    target.stackCounterSizing = node.counterAxisSizing === 'HUG' ? 'RESIZE_TO_FIT' : 'FIXED'
+    target.stackPrimaryAlignItems = node.primaryAxisAlign
+    target.stackCounterAlignItems = node.counterAxisAlign
+    if (node.layoutWrap === 'WRAP') target.stackWrap = 'WRAP'
+    if (node.counterAxisSpacing > 0) target.stackCounterSpacing = node.counterAxisSpacing
   }
 
-  if (node.effects.length > 0) {
-    nc.effects = node.effects.map((e) => ({
-      type: e.type === 'LAYER_BLUR' ? 'FOREGROUND_BLUR' : e.type,
-      color: e.color,
-      offset: e.offset,
-      radius: e.radius,
-      spread: e.spread,
-      visible: e.visible
-    }))
+  if (node.layoutPositioning === 'ABSOLUTE') target.stackPositioning = 'ABSOLUTE'
+  if (node.layoutGrow > 0) target.stackChildPrimaryGrow = node.layoutGrow
+}
+
+function applyVectorData(target: KiwiNodeChange, node: SceneNode, blobs: Uint8Array[]): void {
+  if (!node.vectorNetwork || node.type !== 'VECTOR') return
+  const blobIndex = blobs.length
+  blobs.push(encodeVectorNetworkBlob(node.vectorNetwork))
+  target.vectorData = {
+    vectorNetworkBlob: blobIndex,
+    normalizedSize: { x: node.width, y: node.height }
   }
+}
 
-  if (node.type === 'TEXT') {
-    nc.fontSize = node.fontSize
-    nc.fontName = {
-      family: node.fontFamily,
-      style: formatSerializedFontStyle(node.fontWeight, node.italic, options),
-      postscript: ''
-    }
-    nc.textData = exportTextData(node, options)
-    nc.textAutoResize = node.textAutoResize
-    nc.textAlignHorizontal = node.textAlignHorizontal
-    if (node.lineHeight != null) nc.lineHeight = { value: node.lineHeight, units: 'PIXELS' }
-    if (node.letterSpacing !== 0) nc.letterSpacing = { value: node.letterSpacing, units: 'PIXELS' }
-    if (node.textDecoration !== 'NONE') {
-      nc.textDecoration = node.textDecoration === 'UNDERLINE' ? 'UNDERLINE' : 'STRIKETHROUGH'
-    }
-  }
+function mapGeometryBlobs(
+  geometry: SceneNode['fillGeometry'],
+  blobs: Uint8Array[]
+): Array<{ windingRule: string; commandsBlob: number }> {
+  return geometry.map((path) => {
+    const blobIndex = blobs.length
+    blobs.push(path.commandsBlob)
+    return { windingRule: path.windingRule, commandsBlob: blobIndex }
+  })
+}
 
-  if (
-    node.type === 'FRAME' ||
-    node.type === 'GROUP' ||
-    node.type === 'COMPONENT' ||
-    node.type === 'COMPONENT_SET' ||
-    node.type === 'INSTANCE' ||
-    node.type === 'SECTION'
-  ) {
-    nc.frameMaskDisabled = node.type === 'GROUP' ? true : !node.clipsContent
-    if (node.clipsContent) nc.clipsContent = true
-  }
-
-  if (node.layoutMode !== 'NONE') {
-    nc.stackMode = node.layoutMode
-    nc.stackSpacing = node.itemSpacing
-    nc.stackVerticalPadding = node.paddingTop
-    nc.stackHorizontalPadding = node.paddingLeft
-    nc.stackPaddingBottom = node.paddingBottom
-    nc.stackPaddingRight = node.paddingRight
-    nc.stackPrimarySizing = node.primaryAxisSizing === 'HUG' ? 'RESIZE_TO_FIT' : 'FIXED'
-    nc.stackCounterSizing = node.counterAxisSizing === 'HUG' ? 'RESIZE_TO_FIT' : 'FIXED'
-    nc.stackPrimaryAlignItems = node.primaryAxisAlign
-    nc.stackCounterAlignItems = node.counterAxisAlign
-    if (node.layoutWrap === 'WRAP') nc.stackWrap = 'WRAP'
-    if (node.counterAxisSpacing > 0) nc.stackCounterSpacing = node.counterAxisSpacing
-  }
-
-  if (node.layoutPositioning === 'ABSOLUTE') nc.stackPositioning = 'ABSOLUTE'
-  if (node.layoutGrow > 0) nc.stackChildPrimaryGrow = node.layoutGrow
-
-  if (node.vectorNetwork && node.type === 'VECTOR') {
-    const blobIdx = blobs.length
-    blobs.push(encodeVectorNetworkBlob(node.vectorNetwork))
-    nc.vectorData = {
-      vectorNetworkBlob: blobIdx,
-      normalizedSize: { x: node.width, y: node.height }
-    }
-  }
-
+function applyGeometryData(target: KiwiNodeChange, node: SceneNode, blobs: Uint8Array[]): void {
   if (node.fillGeometry.length > 0) {
-    nc.fillGeometry = node.fillGeometry.map((g) => {
-      const blobIdx = blobs.length
-      blobs.push(g.commandsBlob)
-      return { windingRule: g.windingRule, commandsBlob: blobIdx }
-    })
+    target.fillGeometry = mapGeometryBlobs(node.fillGeometry, blobs)
   }
   if (node.strokeGeometry.length > 0) {
-    nc.strokeGeometry = node.strokeGeometry.map((g) => {
-      const blobIdx = blobs.length
-      blobs.push(g.commandsBlob)
-      return { windingRule: g.windingRule, commandsBlob: blobIdx }
-    })
+    target.strokeGeometry = mapGeometryBlobs(node.strokeGeometry, blobs)
   }
+}
+
+export function sceneNodeToKiwi(
+  node: SceneNode,
+  parentGuid: GUID,
+  childIndex: number,
+  localIdCounter: { value: number },
+  graph: SceneGraph,
+  blobs: Uint8Array[],
+  options: KiwiSerializeOptions = {}
+): KiwiNodeChange[] {
+  const localID = localIdCounter.value++
+  const guid = { sessionID: 1, localID }
+  const serializedType = options.typeOverrides?.get(node.id) ?? node.type
+  const fillPaints = buildFillPaints(node, options)
+  const strokePaints = buildStrokePaints(node)
+  const nc = createBaseNodeChange(node, parentGuid, childIndex, guid, serializedType)
+
+  applyStrokeWeights(nc, node)
+  applyPaints(nc, fillPaints, strokePaints)
+  applyCornerData(nc, node)
+  applyCornerSmoothing(nc, node)
+  applyEffects(nc, node)
+  applyTextData(nc, node, options)
+  applyFrameData(nc, node)
+  applyLayoutData(nc, node)
+  applyVectorData(nc, node, blobs)
+  applyGeometryData(nc, node, blobs)
 
   const result: KiwiNodeChange[] = [nc]
   const children = graph.getChildren(node.id)

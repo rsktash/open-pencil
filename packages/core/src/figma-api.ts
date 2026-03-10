@@ -1,5 +1,4 @@
 import { styleToWeight, weightToFigmaStyle } from './fonts'
-import { SceneGraph } from './scene-graph'
 import type {
   SceneGraph,
   SceneNode,

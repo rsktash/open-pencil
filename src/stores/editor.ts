@@ -1,5 +1,6 @@
 import { shallowReactive, shallowRef, computed, watch } from 'vue'
 
+import { rememberRecentFile } from '@/composables/use-recent-files'
 import {
   IS_TAURI,
   DEFAULT_SHAPE_FILL,
@@ -11,10 +12,10 @@ import {
   ZOOM_SCALE_MIN,
   ZOOM_SCALE_MAX
 } from '@/constants'
-import { rememberRecentFile } from '@/composables/use-recent-files'
 import { loadFont } from '@/engine/fonts'
 import {
   CAPTURE_HIGHLIGHT_DURATION_MS,
+  type Color,
   collectFontKeys,
   computeLayout,
   computeAllLayouts,
@@ -27,29 +28,31 @@ import {
   buildFigmaClipboardHTML,
   buildOpenPencilClipboardHTML,
   prefetchFigmaSchema,
+  readFigFile,
+  type ExportFormat,
+  type Fill,
+  type LayoutMode,
+  type NodeType,
+  type Rect,
+  type SceneNode,
+  type SnapGuide,
+  type ToolCaptureRect,
+  type UndoEntry,
+  type Vector,
+  type VectorNetwork,
+  type VectorRegion,
+  type VectorSegment,
+  type VectorVertex,
   renderNodesToImage,
   renderNodesToSVG,
   SceneGraph,
+  type SkiaRenderer,
   setTextMeasurer,
   TextEditor,
   UndoManager
 } from '@open-pencil/core'
-import { readFigFile } from '@open-pencil/core'
 
-import type { Color, Rect } from '@/types'
-import type {
-  ExportFormat,
-  Fill,
-  LayoutMode,
-  NodeType,
-  SceneNode,
-  SnapGuide,
-  VectorNetwork,
-  VectorRegion,
-  VectorSegment,
-  VectorVertex
-} from '@open-pencil/core'
-import type { ToolCaptureRect } from '@open-pencil/core'
+import type { CanvasKit as CanvasKitType } from 'canvaskit-wasm'
 
 export type Tool =
   | 'SELECT'
@@ -127,6 +130,10 @@ interface CaptureHighlightOverlay {
   startedAt: number
 }
 
+interface ReparentedMoveSnapshot extends Vector {
+  parentId: string
+}
+
 export function createEditorStore() {
   let graph = new SceneGraph()
   const undo = new UndoManager()
@@ -138,12 +145,12 @@ export function createEditorStore() {
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined
   let lastWriteTime = 0
   let unwatchFile: (() => void) | null = null
-  let _ck: import('canvaskit-wasm').CanvasKit | null = null
-  let _renderer: import('@open-pencil/core').SkiaRenderer | null = null
+  let _ck: CanvasKitType | null = null
+  let _renderer: SkiaRenderer | null = null
   let _textEditor: TextEditor | null = null
   let captureHighlightRafId = 0
 
-  prefetchFigmaSchema()
+  void prefetchFigmaSchema()
 
   function downloadBlob(data: Uint8Array, filename: string, mime: string) {
     const blob = new Blob([data.buffer as ArrayBuffer], { type: mime })
@@ -182,7 +189,7 @@ export function createEditorStore() {
     penState: null as {
       vertices: VectorVertex[]
       segments: VectorSegment[]
-      dragTangent: { x: number; y: number } | null
+      dragTangent: Vector | null
       closingToFirst: boolean
     } | null,
     penCursorX: null as number | null,
@@ -220,6 +227,7 @@ export function createEditorStore() {
       if (!state.autosaveEnabled) return
       if (!fileHandle && !filePath) return
       clearTimeout(autosaveTimer)
+      // oxlint-disable-next-line typescript/no-misused-promises
       autosaveTimer = setTimeout(async () => {
         if (state.sceneVersion === savedVersion.value) return
         if (!state.autosaveEnabled) return
@@ -318,7 +326,7 @@ export function createEditorStore() {
 
   function switchPage(pageId: string) {
     const page = graph.getNode(pageId)
-    if (!page || page.type !== 'CANVAS') return
+    if (page?.type !== 'CANVAS') return
 
     // Save current viewport
     pageViewports.set(state.currentPageId, {
@@ -657,15 +665,15 @@ export function createEditorStore() {
       state.selectedIds = new Set()
       state.captureHighlight = null
       const firstPage = graph.getPages()[0]
-      state.currentPageId = firstPage?.id ?? graph.rootId
+      state.currentPageId = firstPage.id
       state.panX = 0
       state.panY = 0
       state.zoom = 1
       state.pageColor = { ...CANVAS_BG_COLOR }
-      await loadFontsForNodes(graph.getChildren(firstPage?.id ?? graph.rootId).map((n) => n.id))
+      await loadFontsForNodes(graph.getChildren(firstPage.id).map((n) => n.id))
       requestRender()
       savedVersion.value = state.sceneVersion
-      startWatchingFile()
+      void startWatchingFile()
       if (path) rememberRecentFile(path, file.name)
     } catch (e) {
       console.error('Failed to open .fig file:', e)
@@ -674,10 +682,7 @@ export function createEditorStore() {
     }
   }
 
-  function setCanvasKit(
-    ck: import('canvaskit-wasm').CanvasKit,
-    renderer: import('@open-pencil/core').SkiaRenderer
-  ) {
+  function setCanvasKit(ck: CanvasKitType, renderer: SkiaRenderer) {
     _ck = ck
     _renderer = renderer
     _textEditor = new TextEditor(ck)
@@ -725,7 +730,7 @@ export function createEditorStore() {
           .pop()
           ?.replace(/\.fig$/i, '') ?? 'Untitled'
       await writeFile(data)
-      startWatchingFile()
+      void startWatchingFile()
       rememberRecentFile(path, path.split(/[\\/]/).pop() ?? 'Untitled.fig')
       return true
     }
@@ -745,7 +750,7 @@ export function createEditorStore() {
         filePath = null
         state.documentName = handle.name.replace(/\.fig$/i, '')
         await writeFile(data)
-        startWatchingFile()
+        void startWatchingFile()
         return true
       } catch (e) {
         if ((e as Error).name === 'AbortError') return false
@@ -874,7 +879,7 @@ export function createEditorStore() {
           (event) => {
             if (typeof event.type !== 'object' || !('modify' in event.type)) return
             if (Date.now() - lastWriteTime < WATCH_DEBOUNCE_MS) return
-            reloadFromDisk()
+            void reloadFromDisk()
           },
           { delayMs: 500 }
         )
@@ -884,6 +889,7 @@ export function createEditorStore() {
       }
     } else if (fileHandle) {
       let lastModified = (await fileHandle.getFile()).lastModified
+      // oxlint-disable-next-line typescript/no-misused-promises
       const interval = setInterval(async () => {
         if (!fileHandle) {
           clearInterval(interval)
@@ -894,7 +900,7 @@ export function createEditorStore() {
           if (file.lastModified > lastModified) {
             lastModified = file.lastModified
             if (Date.now() - lastWriteTime < WATCH_DEBOUNCE_MS) return
-            reloadFromDisk()
+            void reloadFromDisk()
           }
         } catch {
           clearInterval(interval)
@@ -1475,7 +1481,7 @@ export function createEditorStore() {
 
   function createInstanceFromComponent(componentId: string, x?: number, y?: number) {
     const component = graph.getNode(componentId)
-    if (!component || component.type !== 'COMPONENT') return null
+    if (component?.type !== 'COMPONENT') return null
 
     const parentId = component.parentId ?? state.currentPageId
     const instance = graph.createInstance(componentId, parentId, {
@@ -1506,7 +1512,7 @@ export function createEditorStore() {
 
   function detachInstance() {
     const node = selectedNode.value
-    if (!node || node.type !== 'INSTANCE') return
+    if (node?.type !== 'INSTANCE') return
 
     const prevComponentId = node.componentId
 
@@ -1554,7 +1560,7 @@ export function createEditorStore() {
 
   function ungroupSelected() {
     const node = selectedNode.value
-    if (!node || node.type !== 'GROUP') return
+    if (node?.type !== 'GROUP') return
 
     const parentId = node.parentId ?? state.currentPageId
     const parent = graph.getNode(parentId)
@@ -1661,7 +1667,7 @@ export function createEditorStore() {
 
   function moveToPage(pageId: string) {
     const targetPage = graph.getNode(pageId)
-    if (!targetPage || targetPage.type !== 'CANVAS') return
+    if (targetPage?.type !== 'CANVAS') return
     const ids = [...state.selectedIds]
     for (const id of ids) {
       graph.reparentNode(id, pageId)
@@ -1726,7 +1732,7 @@ export function createEditorStore() {
 
   function adoptNodesIntoSection(sectionId: string) {
     const section = graph.getNode(sectionId)
-    if (!section || section.type !== 'SECTION') return
+    if (section?.type !== 'SECTION') return
 
     const parentId = section.parentId ?? state.currentPageId
     const siblings = graph.getChildren(parentId)
@@ -1879,7 +1885,7 @@ export function createEditorStore() {
       return
     }
 
-    parseFigmaClipboard(html).then((figma) => {
+    void parseFigmaClipboard(html).then((figma) => {
       if (figma) {
         const bounds = figmaNodesBounds(figma.nodes)
         const viewCenterX = (-state.panX + window.innerWidth / 2) / state.zoom
@@ -2032,8 +2038,8 @@ export function createEditorStore() {
     }
   }
 
-  function commitMove(originals: Map<string, { x: number; y: number }>) {
-    const finals = new Map<string, { x: number; y: number }>()
+  function commitMove(originals: Map<string, Vector>) {
+    const finals = new Map<string, Vector>()
     for (const [id] of originals) {
       const n = graph.getNode(id)
       if (n) finals.set(id, { x: n.x, y: n.y })
@@ -2058,6 +2064,81 @@ export function createEditorStore() {
         requestRender()
       }
     })
+  }
+
+  function commitMoveWithReparent(originals: Map<string, ReparentedMoveSnapshot>) {
+    const finals = new Map<string, ReparentedMoveSnapshot>()
+    for (const [id] of originals) {
+      const node = graph.getNode(id)
+      if (!node) continue
+      finals.set(id, {
+        x: node.x,
+        y: node.y,
+        parentId: node.parentId ?? state.currentPageId
+      })
+    }
+    for (const [id] of finals) syncIfInsideComponent(id)
+    undo.push({
+      label: 'Move',
+      forward: () => {
+        for (const [id, pos] of finals) {
+          graph.reparentNode(id, pos.parentId)
+          graph.updateNode(id, { x: pos.x, y: pos.y })
+          runLayoutForNode(id)
+        }
+        for (const [id] of finals) syncIfInsideComponent(id)
+        requestRender()
+      },
+      inverse: () => {
+        for (const [id, pos] of originals) {
+          graph.reparentNode(id, pos.parentId)
+          graph.updateNode(id, { x: pos.x, y: pos.y })
+          runLayoutForNode(id)
+        }
+        for (const [id] of originals) syncIfInsideComponent(id)
+        requestRender()
+      }
+    })
+  }
+
+  function snapshotPage(): Map<string, SceneNode> {
+    const snapshot = new Map<string, SceneNode>()
+    const walk = (id: string) => {
+      const node = graph.getNode(id)
+      if (!node) return
+      snapshot.set(id, structuredClone(node))
+      for (const childId of node.childIds) walk(childId)
+    }
+    walk(state.currentPageId)
+    return snapshot
+  }
+
+  function restorePageFromSnapshot(snapshot: Map<string, SceneNode>) {
+    const page = graph.getNode(state.currentPageId)
+    if (!page) return
+
+    for (const childId of page.childIds.slice()) {
+      graph.deleteNode(childId)
+    }
+
+    const pageSnapshot = snapshot.get(state.currentPageId)
+    if (pageSnapshot) page.childIds = [...pageSnapshot.childIds]
+
+    for (const [id, node] of snapshot) {
+      if (id === state.currentPageId) continue
+      graph.nodes.set(id, structuredClone(node))
+    }
+
+    graph.clearAbsPosCache()
+    computeAllLayouts(graph, state.currentPageId)
+    state.selectedIds = new Set()
+    state.hoveredNodeId = null
+    state.captureHighlight = null
+    requestRender()
+  }
+
+  function pushUndoEntry(entry: UndoEntry) {
+    undo.push(entry)
   }
 
   function commitResize(nodeId: string, origRect: Rect) {
@@ -2258,10 +2339,14 @@ export function createEditorStore() {
     mobilePaste,
     deleteSelected,
     commitMove,
+    commitMoveWithReparent,
     commitResize,
     commitRotation,
     commitNodeUpdate,
     updateNodeWithUndo,
+    snapshotPage,
+    restorePageFromSnapshot,
+    pushUndoEntry,
     undoAction,
     redoAction,
     screenToCanvas,

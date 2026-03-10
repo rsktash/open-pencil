@@ -15,9 +15,9 @@ export async function openFileDialog() {
       multiple: false
     })
     if (!path) return
-    const bytes = await readFile(path as string)
-    const file = new File([bytes], basename(path as string))
-    await openFileInNewTab(file, undefined, path as string)
+    const bytes = await readFile(path)
+    const file = new File([bytes], basename(path))
+    await openFileInNewTab(file, undefined, path)
     return
   }
 
@@ -85,7 +85,6 @@ export async function openRecentFile(
 export async function openRecentFileByIndex(index: number) {
   const { recentFiles } = useRecentFiles()
   const entry = recentFiles.value[index]
-  if (!entry) return
   await openRecentFile(entry.path)
 }
 
@@ -94,7 +93,9 @@ const { recentFileMenuEntries } = useRecentFiles()
 
 const MENU_ACTIONS: Record<string, () => void> = {
   new: () => createTab(),
-  open: () => openFileDialog(),
+  open: () => {
+    void openFileDialog()
+  },
   close: () => {
     if (activeTab.value) void closeTab(activeTab.value.id)
   },
@@ -116,13 +117,13 @@ const MENU_ACTIONS: Record<string, () => void> = {
   'detach-instance': () => store.detachInstance(),
   'zoom-fit': () => store.zoomToFit(),
   export: () => {
-    if (store.state.selectedIds.size > 0) store.exportSelection(1, 'PNG')
+    if (store.state.selectedIds.size > 0) void store.exportSelection(1, 'PNG')
   }
 }
 
 function resolveMenuAction(id: string): (() => void) | undefined {
   const action = MENU_ACTIONS[id]
-  if (action) return action
+  if (id in MENU_ACTIONS) return action
 
   if (!id.startsWith('open-recent-')) return undefined
 
@@ -140,8 +141,8 @@ export function useMenu() {
   let unlisten: (() => void) | undefined
   let stopRecentMenuWatch: (() => void) | undefined
 
-  import('@tauri-apps/api/event').then(({ listen }) => {
-    listen<string>('menu-event', (event) => {
+  void import('@tauri-apps/api/event').then(({ listen }) => {
+    void listen<string>('menu-event', (event) => {
       const action = resolveMenuAction(event.payload)
       if (action) action()
     }).then((fn) => {

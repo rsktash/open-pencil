@@ -137,12 +137,12 @@ function isLocalCliBackend(value: unknown): value is LocalCliBackend {
 }
 
 function normalizeStoredSubagentCount(value: unknown): string {
-  const numeric =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string'
-        ? Number.parseInt(value, 10)
-        : Number.NaN
+  let numeric = Number.NaN
+  if (typeof value === 'number') {
+    numeric = value
+  } else if (typeof value === 'string') {
+    numeric = Number.parseInt(value, 10)
+  }
 
   if (!Number.isFinite(numeric)) return String(CHAT_SUBAGENT_COUNT_MIN)
   const clamped = Math.max(CHAT_SUBAGENT_COUNT_MIN, Math.min(CHAT_SUBAGENT_COUNT_MAX, numeric))
@@ -275,7 +275,7 @@ async function sanitizeStoredFilePartAsync(part: FileUIPart): Promise<FileUIPart
   const isEphemeralUrl = part.url.startsWith('data:') || part.url.startsWith('blob:')
   if (!isEphemeralUrl) return part
 
-  const cacheKey = `${part.url}|${part.mediaType ?? ''}|${part.filename ?? ''}`
+  const cacheKey = `${part.url}|${part.mediaType}|${part.filename}`
   const cachedUrl = storedAttachmentUrlCache.get(cacheKey)
   if (cachedUrl) {
     return {
@@ -284,14 +284,14 @@ async function sanitizeStoredFilePartAsync(part: FileUIPart): Promise<FileUIPart
     }
   }
 
-  const fallbackName = part.filename ?? part.mediaType?.replace(/^[^/]+\//, '') ?? 'attachment'
+  const fallbackName = part.filename || part.mediaType.replace(/^[^/]+\//, '') || 'attachment'
 
   try {
     const response = await fetch(part.url)
     const blob = await response.blob()
     const placeholderUrl = await storeChatAttachment(blob, {
       filename: part.filename ?? fallbackName,
-      mediaType: part.mediaType ?? blob.type
+      mediaType: part.mediaType || blob.type
     })
     const url = placeholderUrl ?? buildAttachmentPlaceholderUrl(fallbackName, part.filename)
     storedAttachmentUrlCache.set(cacheKey, url)
@@ -417,9 +417,9 @@ const availableModels = computed(() =>
 )
 const selectedModel = computed(() => {
   const matched = availableModels.value.find((model) => model.id === modelId.value)
-  return matched ?? availableModels.value[0] ?? FALLBACK_MODEL
+  return matched || FALLBACK_MODEL
 })
-const activeBackend = computed(() => selectedModel.value.backend)
+const activeBackend = computed(() => selectedModel.value.backend ?? 'openrouter')
 const backendInfo = computed(() => AI_BACKEND_INFO[activeBackend.value])
 const providerID = useLocalStorage<AIProviderID>(`${STORAGE_PREFIX}ai-provider`, DEFAULT_AI_PROVIDER)
 const providerDef = computed(
@@ -516,8 +516,8 @@ watch(
   availableModels,
   (models) => {
     if (models.some((model) => model.id === modelId.value)) return
-    const nextModel = models[0] ?? FALLBACK_MODEL
-    if (nextModel) modelId.value = nextModel.id
+    const nextModel = models[0]
+    modelId.value = nextModel.id
   },
   { immediate: true }
 )
@@ -655,7 +655,7 @@ async function startNewSession() {
     await invoke('clear_agent_cli_session', {
       backend: previousSession.backend,
       sessionId: previousSession.sessionId
-    }).catch(() => {})
+    }).catch(() => undefined)
   }
 
   resetChat()

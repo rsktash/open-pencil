@@ -94,7 +94,7 @@ export function createServer(version: string, options: CreateServerOptions = {})
       renderer.viewportWidth = 1
       renderer.viewportHeight = 1
       renderer.dpr = 1
-      const pageId = currentPageId ?? currentGraph.getPages()[0]?.id ?? currentGraph.rootId
+      const pageId = currentPageId ?? currentGraph.getPages()[0].id
       return renderNodesToImage(ck, renderer, currentGraph, pageId, nodeIds, {
         scale: opts.scale ?? 1,
         format: (opts.format ?? 'PNG') as ExportFormat
